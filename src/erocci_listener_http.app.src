@@ -1,0 +1,16 @@
+%%-*- mode: erlang -*-
+{application, erocci_listener_http,
+ [
+  {description, "erocci HTTP listener"},
+  {modules, []},
+  {vsn, "git"},
+  {applications, 
+   [
+    kernel,
+    stdlib,
+    cowboy,
+    occi_authnz
+   ]
+  },
+  {registered, []}
+ ]}.
