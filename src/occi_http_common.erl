@@ -24,8 +24,8 @@
 -module(occi_http_common).
 
 -include("occi_http.hrl").
--include("occi.hrl").
--include("occi_log.hrl").
+-include_lib("erocci_core/include/occi.hrl").
+-include_lib("erocci_core/include/occi_log.hrl").
 -include_lib("kernel/include/inet.hrl").
 
 % API

@@ -25,7 +25,7 @@
 
 -behaviour(occi_listener).
 
--include("occi_log.hrl").
+-include_lib("erocci_core/include/occi_log.hrl").
 
 %% occi_listener callbacks
 -export([start_link/2,
