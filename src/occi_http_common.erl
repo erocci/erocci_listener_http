@@ -128,7 +128,7 @@ get_acl_op(Req) ->
 		{Action, _} -> {action, Action}
 	    end;
 	{<<"DELETE">>, _} -> delete;
-	{<<"OPTIONS">>, _} -> read
+	_ -> read
     end.
 
 -spec get_auth() -> iodata().
