@@ -96,13 +96,17 @@ rest_init(Req, Opts) ->
             auth=proplists:get_value(auth, Opts)}}.
 
 allowed_methods(Req, #state{node=#occi_node{objid=#uri{}, type=occi_collection}}=State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>], Req, State);
+    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"HEAD">>], 
+			Req, State);
 allowed_methods(Req, #state{node=#occi_node{type=capabilities}}=State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>], Req, State);
+    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>], 
+			Req, State);
 allowed_methods(Req, #state{node=#occi_node{objid=#occi_cid{class=kind}, type=occi_collection}}=State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>], Req, State);
+    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>], 
+			Req, State);
 allowed_methods(Req, State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>], Req, State).
+    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>], 
+			Req, State).
 
 content_types_provided(Req, State) ->
     {[
