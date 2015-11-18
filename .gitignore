@@ -4,3 +4,4 @@
 /deps
 /.erlang.mk
 /ebin
+/logs
