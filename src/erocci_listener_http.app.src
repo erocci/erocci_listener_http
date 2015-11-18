@@ -9,7 +9,8 @@
     kernel,
     stdlib,
     cowboy,
-    erocci_authnz
+    erocci_authnz,
+	erocci_backend_mnesia
    ]
   },
   {registered, []}
