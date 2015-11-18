@@ -17,8 +17,8 @@
 
 -include_lib("erocci_core/include/occi.hrl").
 
--define(PORT, 8080).
--define(NAME, "http://localhost:8080").
+-define(PORT, 9999).
+-define(NAME, "http://localhost:9999").
 
 
 suite() ->
