@@ -15,7 +15,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("kernel/include/file.hrl").
 
--include("occi.hrl").
+-include_lib("erocci_core/include/occi.hrl").
 
 -define(PORT, 8080).
 -define(NAME, "http://localhost:8080").
@@ -25,19 +25,23 @@ suite() ->
     [{timetrap,{seconds,30}}].
 
 init_per_suite(Config) ->
-    application:ensure_all_started(occi_core),
+	application:load(erocci_core),
+
+	application:set_env(erocci_core, listeners, 
+						[{http, occi_http, [{port, ?PORT}]}]),
     Schemas = {schemas, [{path, get_data_path("occi.xml", Config)}]},
-    Backends = {backends, 
-		[{mnesia, occi_backend_mnesia, [Schemas], <<"/">>}]},
-    Listeners = {listeners, 
-		 [{http, occi_http, [{port, ?PORT}]}]
-		},
-    Acls = {acl, [{allow, '_', '_', '_'}]},
-    occi:config([{name, ?NAME}, Schemas, Backends, Listeners, Acls]),
+	application:set_env(erocci_core, backends,
+						[{mnesia, occi_backend_mnesia, [Schemas], <<"/">>}]),
+	application:set_env(erocci_core, acl,
+						[{allow, '_', '_', '_'}]),
+
+    application:ensure_all_started(erocci_core),
     Config.
 
 end_per_suite(_Config) ->
-    application:stop(occi_core),
+	error_logger:delete_report_handler(cth_log_redirect),
+    application:stop(erocci_core),
+	error_logger:add_report_handler(cth_log_redirect),
     ok.
 
 
