@@ -97,16 +97,16 @@ rest_init(Req, Opts) ->
 
 allowed_methods(Req, #state{node=#occi_node{objid=#uri{}, type=occi_collection}}=State) ->
     set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"HEAD">>], 
-			Req, State);
+                        Req, State);
 allowed_methods(Req, #state{node=#occi_node{type=capabilities}}=State) ->
     set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>], 
-			Req, State);
+                        Req, State);
 allowed_methods(Req, #state{node=#occi_node{objid=#occi_cid{class=kind}, type=occi_collection}}=State) ->
     set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>], 
-			Req, State);
+                        Req, State);
 allowed_methods(Req, State) ->
     set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>], 
-			Req, State).
+                        Req, State).
 
 content_types_provided(Req, State) ->
     {[
@@ -222,6 +222,9 @@ save(Req, #state{node=#occi_node{type=occi_collection, objid=#occi_cid{class=Cls
             save_collection(Req, State)
     end;
 
+save(Req, #state{node=#occi_node{type=occi_entity}}=State) ->
+    save_entity(Req, State);
+
 save(Req, #state{node=#occi_node{type=occi_resource}}=State) ->
     save_entity(Req, State);
 
@@ -267,8 +270,8 @@ render(Req, #state{node=Node, ct=#content_type{renderer=Renderer}, filters=Filte
                     {halt, Req2, State}
             end
     catch _:_ ->
-              {ok, Req2} = cowboy_req:reply(400, Req),
-              {halt, Req2, State}
+            {ok, Req2} = cowboy_req:reply(400, Req),
+            {halt, Req2, State}
     end.
 
 
@@ -343,7 +346,7 @@ update_entity(Req, #state{node=Node, auth=Ref, user=User, ct=#content_type{parse
                     {false, Req2, State};
                 {error, Err} ->
                     ?error("Internal error: ~p~n", [Err]),
-                    {halt, Req2, State};	    
+                    {halt, Req2, State};        
                 {ok, #occi_resource{}=Res} ->
                     Node3 = occi_node:set_data(Node2, Res),
                     case occi_store:update(Node3, #occi_store_ctx{user=User, auth_ref=Ref}) of
@@ -364,7 +367,7 @@ update_entity(Req, #state{node=Node, auth=Ref, user=User, ct=#content_type{parse
                             {ok, Req3} = cowboy_req:reply(Reason, Req2),
                             {halt, Req3, State}
                     end
-            end;	    
+            end;        
         {error, Err} ->
             ?error("Error loading object: ~p~n", [Err]),
             {halt, Req2, State}
@@ -381,7 +384,7 @@ save_collection(Req, #state{ct=#content_type{parser=Parser},
             {false, Req2, State};
         {error, Err} ->
             ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};	    
+            {halt, Req2, State};        
         {ok, #occi_collection{}=C} ->
             Coll = occi_collection:new(Cid, occi_collection:get_entities(C)),
             case occi_store:save(Node#occi_node{type=occi_collection, data=Coll}) of
@@ -437,7 +440,7 @@ update_collection(Req, #state{auth=Ref, user=User, ct=#content_type{parser=Parse
             {false, Req2, State};
         {error, Err} ->
             ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};	    
+            {halt, Req2, State};        
         {ok, #occi_collection{}=C} ->
             Coll = occi_collection:new(Cid, occi_collection:get_entities(C)),
             Node2 = Node#occi_node{type=occi_collection, data=Coll},
@@ -463,7 +466,7 @@ update_capabilities(Req, #state{env=Env, user=User, auth=Ref, ct=#content_type{p
             {halt, Req3, State};
         {error, Err} ->
             ?debug("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};	    
+            {halt, Req2, State};        
         {ok, undefined} ->
             ?debug("Empty request~n"),
             {false, Req2, State};
@@ -486,7 +489,7 @@ action(Req, #state{ct=#content_type{parser=Parser}, node=Node}=State, ActionName
             {false, Req2, State};
         {error, Err} ->
             ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};	    
+            {halt, Req2, State};        
         {ok, #occi_action{}=Action} ->
             case occi_store:action(Node, Action) of
                 ok ->
@@ -513,18 +516,11 @@ prepare_entity(#occi_node{id=#uri{path=Prefix}, type=occi_collection, objid=Cid}
             throw({error, internal_error})
     end;
 
-prepare_entity(#occi_node{type=occi_resource}=Node, _Env) ->
+prepare_entity(#occi_node{type=Type}=Node, _Env) 
+  when Type =:= occi_resource; Type =:= occi_link; Type =:= occi_entity ->
     case occi_store:load(Node) of
-        {ok, #occi_node{data=Res}} ->
-            occi_resource:reset(Res);
-        {error, Err} ->
-            throw({error, Err})
-    end;
-
-prepare_entity(#occi_node{type=occi_link}=Node, _Env) ->
-    case occi_store:load(Node) of
-        {ok, #occi_node{data=Link}} ->
-            occi_link:reset(Link);
+        {ok, #occi_node{data=E}} ->
+            occi_entity:reset(E);
         {error, Err} ->
             throw({error, Err})
     end;
