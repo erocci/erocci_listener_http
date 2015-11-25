@@ -29,7 +29,7 @@
 
 %% occi_listener callbacks
 -export([start_link/2,
-	 terminate/2]).
+         terminate/2]).
 
 start_link(Ref, Opts) ->
     ?info("Starting HTTPS listener~n", []),
@@ -45,15 +45,15 @@ validate_cfg(Opts) ->
     Address = proplists:get_value(ip, Opts, {0,0,0,0}),
     Port = proplists:get_value(port, Opts, 8443),
     case proplists:is_defined(cacertfile, Opts) of
-	true -> ok;
-	false -> throw({missing_opt, cacertfile}) 
+        true -> ok;
+        false -> throw({missing_opt, cacertfile}) 
     end,
     case proplists:is_defined(certfile, Opts) of
-	true -> ok;
-	false -> throw({missing_opt, certfile}) 
+        true -> ok;
+        false -> throw({missing_opt, certfile}) 
     end,
     case proplists:is_defined(keyfile, Opts) of
-	true -> ok;
-	false -> throw({missing_opt, keyfile}) 
+        true -> ok;
+        false -> throw({missing_opt, keyfile}) 
     end,
     [{ip, Address}, {port, Port}, {scheme, https} | Opts].
