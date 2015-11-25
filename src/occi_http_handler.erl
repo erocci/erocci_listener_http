@@ -303,9 +303,9 @@ render_range({S, E, T}) when is_integer(S),
                       integer_to_binary(T)]).
 
 
-save_entity(Req, #state{env=Env, user=User, node=Node, auth=Ref, ct=#content_type{parser=Parser}}=State) ->
+save_entity(Req, #state{user=User, node=Node, auth=Ref, ct=#content_type{parser=Parser}}=State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
-    Entity = prepare_entity(Node, Env),
+    Entity = prepare_entity(Node),
     case Parser:parse_entity(Body, Req2, Entity) of
         {error, {parse_error, Err}} ->
             ?error("Error processing request: ~p~n", [Err]),
@@ -402,9 +402,9 @@ save_collection(Req, #state{ct=#content_type{parser=Parser},
 
 update_collection(Req, #state{ct=#content_type{parser=Parser}, env=Env,
                               user=User, auth=Ref,
-                              node=#occi_node{type=occi_collection, objid=#occi_cid{class=kind}}=Node}=State) ->
+                              node=#occi_node{id=#uri{path=Prefix}, type=occi_collection, objid=#occi_cid{class=kind}}=Node}=State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
-    Entity = prepare_entity(Node, Env),
+    Entity = prepare_entity(Node),  
     case Parser:parse_entity(Body, Req2, Entity) of
         {error, {parse_error, Err}} ->
             ?error("Error processing request: ~p~n", [Err]),
@@ -412,22 +412,19 @@ update_collection(Req, #state{ct=#content_type{parser=Parser}, env=Env,
         {error, Err} ->
             ?error("Internal error: ~p~n", [Err]),
             {halt, Req2, State};
-        {ok, #occi_resource{}=Res} ->
-            Node2 = occi_node:new(Res, User),
+        {ok, Entity2} ->
+            Entity3 = case occi_entity:id(Entity2) of
+                          undefined ->
+                              occi_entity:id(Entity2, occi_config:gen_id(Prefix, Env));
+                          Suffix ->
+                              occi_entity:id(Entity2, occi_uri:parse(filename:join([Prefix, Suffix])))
+                      end,
+            Node2 = occi_node:new(Entity3, User),
             case occi_store:save(Node2, #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref}) of
                 ok ->
                     {{true, occi_uri:to_binary(Node2#occi_node.id, Env)}, Req2, State};
                 {error, Reason} ->
-                    ?error("Error creating resource: ~p~n", [Reason]),
-                    {halt, Req2, State}
-            end;
-        {ok, #occi_link{}=Link} ->
-            Node2 = occi_node:new(Link, User),
-            case occi_store:save(Node2, #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref}) of
-                ok ->
-                    {{true, occi_uri:to_binary(Node2#occi_node.id, Env)}, Req2, State};
-                {error, Reason} ->
-                    ?error("Error creating link: ~p~n", [Reason]),
+                    ?error("Error creating entity: ~p~n", [Reason]),
                     {halt, Req2, State}
             end
     end;
@@ -505,18 +502,17 @@ prepare_action(_Req, _Node, Name) ->
     occi_action:new(#occi_cid{term=?term_to_atom(Name), class=action}).
 
 
-prepare_entity(#occi_node{id=#uri{path=Prefix}, type=occi_collection, objid=Cid}, Env) ->
-    Id = occi_config:gen_id(Prefix, Env),
+prepare_entity(#occi_node{type=occi_collection, objid=Cid}) ->
     case occi_store:get(Cid) of
         {ok, #occi_kind{parent=#occi_cid{term=resource}}=Kind} ->
-            occi_resource:new(Id, Kind);
+            occi_resource:new(Kind);
         {ok, #occi_kind{parent=#occi_cid{term=link}}=Kind} ->
-            occi_link:new(Id, Kind);
+            occi_link:new(Kind);
         _ ->
             throw({error, internal_error})
     end;
 
-prepare_entity(#occi_node{type=Type}=Node, _Env) 
+prepare_entity(#occi_node{type=Type}=Node) 
   when Type =:= occi_resource; Type =:= occi_link; Type =:= occi_entity ->
     case occi_store:load(Node) of
         {ok, #occi_node{data=E}} ->
@@ -525,7 +521,7 @@ prepare_entity(#occi_node{type=Type}=Node, _Env)
             throw({error, Err})
     end;
 
-prepare_entity(#occi_node{id=Id, type=undefined}, _Env) ->
+prepare_entity(#occi_node{id=Id, type=undefined}) ->
     #occi_entity{id=Id}.
 
 set_allowed_methods(Methods, Req, State) ->
