@@ -478,7 +478,8 @@ update_capabilities(Req, #state{env=Env, user=User, auth=Ref, ct=#content_type{p
     end.
 
 
-action(Req, #state{ct=#content_type{parser=Parser}, node=Node}=State, ActionName) ->
+action(Req, #state{ct=#content_type{parser=Parser, renderer=Renderer}, node=Node,
+                   env=Env, user=User, auth=AuthRef}=State, ActionName) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     case Parser:parse_action(Body, Req2, prepare_action(Req2, Node, ActionName)) of
         {error, {parse_error, Err}} ->
@@ -488,9 +489,11 @@ action(Req, #state{ct=#content_type{parser=Parser}, node=Node}=State, ActionName
             ?error("Internal error: ~p~n", [Err]),
             {halt, Req2, State};        
         {ok, #occi_action{}=Action} ->
-            case occi_store:action(Node, Action) of
-                ok ->
-                    {true, Req2, State};
+            Ctx = #occi_store_ctx{user=User, auth_ref=AuthRef},
+            case occi_store:action(Node, Action, Ctx) of
+                {ok, Node2} ->
+                    {RespBody, #occi_env{req=Req3}} = Renderer:render(Node2, Env#occi_env{req=Req2}),
+                    {true, cowboy_req:set_resp_body(RespBody, Req3), State};
                 {error, Err} ->
                     ?error("Error triggering action: ~p~n", [Err]),
                     {halt, Req2, Node}
