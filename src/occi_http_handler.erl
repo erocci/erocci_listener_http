@@ -303,9 +303,11 @@ render_range({S, E, T}) when is_integer(S),
                       integer_to_binary(T)]).
 
 
-save_entity(Req, #state{user=User, node=Node, auth=Ref, ct=#content_type{parser=Parser}}=State) ->
+save_entity(Req, #state{user=User, node=Node, auth=Ref, env=Env,
+                        ct=#content_type{parser=Parser, renderer=Renderer}}=State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     Entity = prepare_entity(Node),
+    Ctx = #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref},
     case Parser:parse_entity(Body, Req2, Entity) of
         {error, {parse_error, Err}} ->
             ?error("Error processing request: ~p~n", [Err]),
@@ -315,9 +317,10 @@ save_entity(Req, #state{user=User, node=Node, auth=Ref, ct=#content_type{parser=
             {halt, Req2, State};
         {ok, #occi_resource{}=Res} ->
             Node2 = occi_node:new(Res, User),
-            case occi_store:save(Node2, #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref}) of
+            case occi_store:save(Node2, Ctx) of
                 ok ->
-                    {true, Req2, State};
+                    {RespBody, #occi_env{req=Req3}} = Renderer:render(Node2, Env#occi_env{req=Req2}),
+                    {true, cowboy_req:set_resp_body(RespBody, Req3), State};
                 {error, Reason} ->
                     ?error("Error creating resource: ~p~n", [Reason]),
                     {ok, Req3} = cowboy_req:reply(Reason, Req2),
@@ -325,9 +328,10 @@ save_entity(Req, #state{user=User, node=Node, auth=Ref, ct=#content_type{parser=
             end;
         {ok, #occi_link{}=Link} ->
             Node2 = occi_node:new(Link, User),
-            case occi_store:save(Node2, #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref}) of
+            case occi_store:save(Node2, Ctx) of
                 ok ->
-                    {true, Req2, State};
+                    {RespBody, #occi_env{req=Req3}} = Renderer:render(Node2, Env#occi_env{req=Req2}),
+                    {true, cowboy_req:set_resp_body(RespBody, Req3), State};
                 {error, Reason} ->
                     ?error("Error creating link: ~p~n", [Reason]),
                     {ok, Req3} = cowboy_req:reply(Reason, Req2),
@@ -336,8 +340,10 @@ save_entity(Req, #state{user=User, node=Node, auth=Ref, ct=#content_type{parser=
     end.
 
 
-update_entity(Req, #state{node=Node, auth=Ref, user=User, ct=#content_type{parser=Parser}}=State) ->
+update_entity(Req, #state{node=Node, auth=Ref, user=User, env=Env,
+                          ct=#content_type{parser=Parser, renderer=Renderer}}=State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
+    Ctx = #occi_store_ctx{user=User, auth_ref=Ref},
     case occi_store:load(Node) of
         {ok, #occi_node{data=Entity}=Node2} ->
             case Parser:parse_entity(Body, Req2, Entity) of
@@ -349,9 +355,10 @@ update_entity(Req, #state{node=Node, auth=Ref, user=User, ct=#content_type{parse
                     {halt, Req2, State};        
                 {ok, #occi_resource{}=Res} ->
                     Node3 = occi_node:set_data(Node2, Res),
-                    case occi_store:update(Node3, #occi_store_ctx{user=User, auth_ref=Ref}) of
+                    case occi_store:update(Node3, Ctx) of
                         ok ->
-                            {true, cowboy_req:set_resp_body("OK\n", Req2), State};
+                            {RespBody, #occi_env{req=Req3}} = Renderer:render(Node3, Env#occi_env{req=Req2}),
+                            {true, cowboy_req:set_resp_body(RespBody, Req3), State};
                         {error, Reason} ->
                             ?error("Error updating resource: ~p~n", [Reason]),
                             {ok, Req3} = cowboy_req:reply(Reason, Req2),
@@ -359,9 +366,10 @@ update_entity(Req, #state{node=Node, auth=Ref, user=User, ct=#content_type{parse
                     end;
                 {ok, #occi_link{}=Link} ->
                     Node3 = occi_node:set_data(Node2, Link),
-                    case occi_store:update(Node3, #occi_store_ctx{user=User, auth_ref=Ref}) of
+                    case occi_store:update(Node3, Ctx) of
                         ok ->
-                            {true, cowboy_req:set_resp_body("OK\n", Req2), State};
+                            {RespBody, #occi_env{req=Req3}} = Renderer:render(Node3, Env#occi_env{req=Req2}),
+                            {true, cowboy_req:set_resp_body(RespBody, Req3), State};
                         {error, Reason} ->
                             ?error("Error updating link: ~p~n", [Reason]),
                             {ok, Req3} = cowboy_req:reply(Reason, Req2),
@@ -402,7 +410,7 @@ save_collection(Req, #state{ct=#content_type{parser=Parser},
 
 update_collection(Req, #state{ct=#content_type{parser=Parser}, env=Env,
                               user=User, auth=Ref,
-                              node=#occi_node{id=#uri{path=Prefix}, type=occi_collection, objid=#occi_cid{class=kind}}=Node}=State) ->
+                              node=#occi_node{id=#uri{path=Prefix}=Id, type=occi_collection, objid=#occi_cid{class=kind}}=Node}=State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     Entity = prepare_entity(Node),  
     case Parser:parse_entity(Body, Req2, Entity) of
@@ -416,8 +424,9 @@ update_collection(Req, #state{ct=#content_type{parser=Parser}, env=Env,
             Entity3 = case occi_entity:id(Entity2) of
                           undefined ->
                               occi_entity:id(Entity2, occi_config:gen_id(Prefix, Env));
-                          Suffix ->
-                              occi_entity:id(Entity2, occi_uri:parse(filename:join([Prefix, Suffix])))
+                          #uri{path=Suffix} ->
+                              Id2 = Id#uri{path=filename:join(Prefix, Suffix)},
+                              occi_entity:id(Entity2, Id2)
                       end,
             Node2 = occi_node:new(Entity3, User),
             case occi_store:save(Node2, #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref}) of
