@@ -398,7 +398,7 @@ save_collection(Req, #state{ct=#content_type{parser=Parser},
     end.
 
 
-update_collection(Req, #state{ct=#content_type{parser=Parser}, env=Env,
+update_collection(Req, #state{ct=#content_type{parser=Parser, renderer=Renderer}, env=Env,
                               user=User, auth=Ref,
                               node=#occi_node{id=#uri{path=Prefix}=Id, type=occi_collection, objid=#occi_cid{class=kind}}=Node}=State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
@@ -421,7 +421,10 @@ update_collection(Req, #state{ct=#content_type{parser=Parser}, env=Env,
             Node2 = occi_node:new(Entity3, User),
             case occi_store:save(Node2, #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref}) of
                 ok ->
-                    {{true, occi_uri:to_binary(Node2#occi_node.id, Env)}, Req2, State};
+                    {RespBody, #occi_env{req=Req3}} = Renderer:render(Node2, Env#occi_env{req=Req2}),
+                    Req4 = cowboy_req:set_resp_header(<<"location">>, 
+                                                      occi_uri:to_binary(Node2#occi_node.id, Env), Req3),
+                    {true, cowboy_req:set_resp_body(RespBody, Req4), State};
                 {error, Reason} ->
                     ?error("Error creating entity: ~p~n", [Reason]),
                     {halt, Req2, State}
