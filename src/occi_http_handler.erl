@@ -459,7 +459,7 @@ update_collection(Req, #state{auth=Ref, user=User, ct=#content_type{parser=Parse
     end.
 
 
-update_capabilities(Req, #state{env=Env, user=User, auth=Ref, ct=#content_type{parser=Parser}}=State) ->
+update_capabilities(Req, #state{user=User, auth=Ref, ct=#content_type{parser=Parser}}=State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     case Parser:parse_user_mixin(Body, Req2) of
         {error, {parse_error, Err}} ->
@@ -472,10 +472,10 @@ update_capabilities(Req, #state{env=Env, user=User, auth=Ref, ct=#content_type{p
         {ok, undefined} ->
             ?debug("Empty request~n"),
             {false, Req2, State};
-        {ok, #occi_mixin{location=Uri}=Mixin} ->
+        {ok, Mixin} ->
             case occi_store:update(occi_node:new(Mixin, User), #occi_store_ctx{user=User, auth_ref=Ref}) of
                 ok ->
-                    {{true, occi_uri:to_binary(Uri, Env)}, cowboy_req:set_resp_body("OK\n", Req2), State};
+                    {true, cowboy_req:set_resp_body("OK\n", Req2), State};
                 {error, Reason} ->
                     ?debug("Error creating resource: ~p~n", [Reason]),
                     {halt, Req2, State}
