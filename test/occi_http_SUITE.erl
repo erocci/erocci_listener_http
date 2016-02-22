@@ -40,7 +40,8 @@ init_per_suite(Config) ->
 
 end_per_suite(_Config) ->
     error_logger:delete_report_handler(cth_log_redirect),
-    application:stop(erocci_core),
+    application:stop(erocci_core), 
+    ok = cowboy:stop_listener(http),
     error_logger:add_report_handler(cth_log_redirect),
     ok.
 
