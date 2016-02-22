@@ -12,11 +12,9 @@ addons:
       - libssl-dev
       - libexpat1-dev
 
-install:
-  - "make"
-
 script:
-  - "make tests"
+  - "make"
+#  - "make tests"
 
 notifications:
   email:
