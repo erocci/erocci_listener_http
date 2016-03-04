@@ -239,6 +239,9 @@ update(Req, #state{node=#occi_node{type=capabilities}}=State) ->
 update(Req, #state{node=#occi_node{type=occi_collection, objid=#occi_cid{}}}=State) ->
     update_collection(Req, State);
 
+update(Req, #state{node=#occi_node{type=occi_entity}}=State) ->
+    update_entity(Req, State);
+
 update(Req, #state{node=#occi_node{type=occi_resource}}=State) ->
     update_entity(Req, State);
 
@@ -351,13 +354,13 @@ update_entity(Req, #state{node=Node, auth=Ref, user=User, env=Env,
                 {error, Err} ->
                     ?error("Internal error: ~p~n", [Err]),
                     {halt, Req2, State};        
-                {ok, Entity} ->
-                    Node3 = occi_node:set_data(Node2, Entity),
+                {ok, Entity2} ->
+                    Node3 = occi_node:set_data(Node2, Entity2),
                     case occi_store:update(Node3, Ctx) of
                         ok ->
                             {RespBody, #occi_env{req=Req3}} = Renderer:render(Node3, Env#occi_env{req=Req2}),
-                            {ok, Req4} = cowboy_req:reply(201, Req3),
-                            {true, cowboy_req:set_resp_body(RespBody, Req4), State};
+                            %%{ok, Req4} = cowboy_req:reply(201, Req3),
+                            {true, cowboy_req:set_resp_body(RespBody, Req3), State};
                         {error, Reason} ->
                             ?error("Error updating entity: ~p~n", [Reason]),
                             {ok, Req3} = cowboy_req:reply(Reason, Req2),
