@@ -13,7 +13,7 @@
 %%% @end
 %%% Created : 25 Mar 2013 by Jean Parpaillon <jean.parpaillon@free.fr>
 %%%-------------------------------------------------------------------
--module(occi_http).
+-module(erocci_http).
 
 -behaviour(occi_listener).
 
@@ -25,10 +25,10 @@
 
 start_link(Ref, Opts) ->
     ?info("Starting HTTP listener~n", []),
-    occi_http_common:start(Ref, start_http, validate_cfg(Opts)).
+    erocci_http_common:start(Ref, start_http, validate_cfg(Opts)).
 
 terminate(Ref, _Reason) ->
-    occi_http_common:stop(Ref).
+    erocci_http_common:stop(Ref).
 
 %%%
 %%% Priv

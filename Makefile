@@ -3,12 +3,10 @@ version = 0.1
 PROJECT = erocci_listener_http
 PROJECT_VERSION = $(shell git describe --always --tags 2> /dev/null || echo $(version))
 
-DEPS = erocci_core cowboy cowboy_swagger erocci_authnz erocci_backend_mnesia
-dep_erocci_core = git https://github.com/erocci/erocci_core.git master
-dep_erocci_backend_mnesia = git https://github.com/erocci/erocci_backend_mnesia.git master
-dep_erocci_authnz = git https://github.com/erocci/erocci_authnz.git master
-dep_cowboy = git https://github.com/ninenines/cowboy.git 1.0.3
-dep_cowboy_swagger = git https://github.com/inaka/cowboy-swagger.git 1.0.3
+DEPS = occi erocci_core cowboy_swagger
+dep_occi = git https://github.com/erocci/erlang-occi.git master
+dep_erocci_core = git https://github.com/erocci/erocci_core.git erlang-occi-integration
+dep_cowboy_swagger = git https://github.com/jeanparpaillon/cowboy-swagger.git cowboy2
 
 include erlang.mk
 

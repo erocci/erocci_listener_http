@@ -4,8 +4,8 @@
 %%%
 %%% @end
 %%% Created : 15 May 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
--ifndef(occi_http_hrl).
--define(occi_http_hrl, true).
+-ifndef(erocci_http_hrl).
+-define(erocci_http_hrl, true).
 
 -define(SERVER_ID, "erocci OCCI/1.1").
 

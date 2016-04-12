@@ -1,23 +1,23 @@
-% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @copyright (c) 2013-2016 Jean Parpaillon
-%%% 
-%%% This file is provided to you under the license described
-%%% in the file LICENSE at the root of the project.
-%%%
-%%% You can also download the LICENSE file from the following URL:
-%%% https://github.com/erocci/erocci/blob/master/LICENSE
-%%% 
-%% @doc Example webmachine_resource.
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
+%% @copyright (c) 2013-2016 Jean Parpaillon
+%% 
+%% This file is provided to you under the license described
+%% in the file LICENSE at the root of the project.
+%%
+%% You can also download the LICENSE file from the following URL:
+%% https://github.com/erocci/erocci/blob/master/LICENSE
+%% 
+%% @doc Handler REST requests for erocci
+%% @end
 
--module(occi_http_handler).
+-module(erocci_http_handler).
 
--include_lib("erocci_core/include/occi.hrl").
--include_lib("erocci_core/include/occi_log.hrl").
--include("occi_http.hrl").
+-include_lib("erocci_core/include/erocci.hrl").
+-include_lib("erocci_core/include/erocci_log.hrl").
+-include("erocci_http.hrl").
 
 %% REST Callbacks
--export([init/3, 
-         rest_init/2,
+-export([init/2, 
          allowed_methods/2,
          allow_missing_post/2,
          is_authorized/2,
@@ -27,184 +27,197 @@
          content_types_provided/2,
          content_types_accepted/2]).
 
+
+%% trails
+-behaviour(trails_handler).
+-export([trails/0]).
+
+
 %% Callback callbacks
--export([to_occi/2,
-         to_plain/2,
-         to_uri_list/2,
-         to_json/2,
-         to_xml/2,
-         from_plain/2,
-         from_occi/2,
-         from_json/2,
-         from_xml/2]).
+-export([to/2, from/2]).
 
-%% Trails
--export([trails_query/1,
-		 trails_collections/1,
-		 trails_all/1]).
 
--record(state, {op      :: atom(), 
-                node, 
-                ct, 
-                user,
-                filters :: term(),
-                env     :: occi_env(),
-                auth    :: reference() | undefined}).
+init(Req, _Opts) -> 
+    Creds = credentials(Req),
+    Filter = parse_filters(cowboy_req:parse_qs(Req)),
+    Req2 = cowboy_req:set_resp_header(<<"server">>, ?SERVER_ID, Req),
+    case cowboy_req:path(Req2) of
+	<<"/-/">> ->
+	    init_capabilities(Creds, Filter , Req2);
+	<<"/.well-known/org/ogf/occi/-/">> ->
+	    init_capabilities(Creds, Filter, Req2);
+	Path ->
+	    init_node(Path, Creds, Filter, Req2)
+    end.
 
--record(content_type, {parser   :: atom(),
-                       renderer :: atom(),
-                       mimetype :: binary()}).
 
--define(ct_plain,    #content_type{parser=occi_parser_plain, renderer=occi_renderer_plain, 
-                                   mimetype="text/plain"}).
--define(ct_occi,     #content_type{parser=occi_parser_occi, renderer=occi_renderer_occi, 
-                                   mimetype="text/occi"}).
--define(ct_uri_list, #content_type{parser=occi_parser_uri_list, renderer=occi_renderer_uri_list, 
-                                   mimetype="text/uri-list"}).
--define(ct_json,     #content_type{parser=occi_parser_json, renderer=occi_renderer_json, 
-                                   mimetype="application/json"}).
--define(ct_xml,      #content_type{parser=occi_parser_xml, renderer=occi_renderer_xml, 
-                                   mimetype="application/xml"}).
+init_capabilities(Creds, Filter, Req) ->
+    {cowboy_rest, Req, erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req))}.
 
--define(caps, #occi_node{id=#uri{path="/-/"}, type=capabilities}).
 
-init(_Transport, _Req, _Opts) -> 
-    {upgrade, protocol, cowboy_rest}.
+init_node(Path, Creds, Filter, Req) ->
+    {cowboy_rest, Req, erocci_store:find(Path, Creds, Filter, cowboy_req:url(Req))}.
 
-rest_init(Req, Opts) ->
-    Op = occi_http_common:get_acl_op(Req),
-    {Path, _} = cowboy_req:path(Req),
-    Filters = case Op of
-                  read -> parse_filters(Req);
-                  delete -> parse_filters(Req);
-                  _ -> []
-              end,
-    Node = case Path of
-               <<"/-/">> ->
-                   get_caps_node(Filters);
-               <<"/.well-known/org/ogf/occi/-/">> ->
-                   get_caps_node(Filters);
-               _ ->
-                   get_node(Path)
-           end,
-    {ok, cowboy_req:set_resp_header(<<"server">>, ?SERVER_ID, Req), 
-     #state{op=Op, node=Node, filters=Filters, 
-            env=#occi_env{req_uri=get_req_url(Req)},
-            auth=proplists:get_value(auth, Opts)}}.
 
-allowed_methods(Req, #state{node=#occi_node{objid=#uri{}, type=occi_collection}}=State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"HEAD">>], 
-                        Req, State);
-allowed_methods(Req, #state{node=#occi_node{type=capabilities}}=State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>], 
-                        Req, State);
-allowed_methods(Req, #state{node=#occi_node{objid=#occi_cid{class=kind}, type=occi_collection}}=State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>], 
-                        Req, State);
-allowed_methods(Req, State) ->
-    set_allowed_methods([<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>], 
-                        Req, State).
+allowed_methods(Req, {error, not_found}=S) ->
+    Methods = [<<"GET">>, <<"OPTIONS">>, <<"HEAD">>],
+    set_allowed_methods(Methods, Req, S);
 
-content_types_provided(Req, State) ->
-    {[
-      {{<<"text">>,            <<"plain">>,     []}, to_plain},
-      {{<<"text">>,            <<"occi">>,      []}, to_occi},
-      {{<<"text">>,            <<"uri-list">>,  []}, to_uri_list},
-      {{<<"application">>,     <<"json">>,      []}, to_json},
-      {{<<"application">>,     <<"occi+json">>, []}, to_json},
-      {{<<"application">>,     <<"xml">>,       []}, to_xml},
-      {{<<"application">>,     <<"occi+xml">>,  []}, to_xml}
-     ],
-     Req, State}.
+allowed_methods(Req, {error, _}=S) ->
+    Methods = [<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>],
+    set_allowed_methods(Methods, Req, S);
+
+allowed_methods(Req, {ok, Node}=S) ->
+    Methods = case erocci_node:type(Node) of
+		  capabilities ->
+		      [<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>];
+		  {collection, kind} ->
+		      [<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"HEAD">>];
+		  _ ->
+		      [<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>]
+	      end,
+    set_allowed_methods(Methods, Req, S).
+
+
+content_types_provided(Req, {ok, Node}=S) ->
+    CT = [
+	  {{<<"text">>,            <<"plain">>,     []}, to},
+	  {{<<"text">>,            <<"occi">>,      []}, to},
+	  {{<<"application">>,     <<"json">>,      []}, to},
+	  {{<<"application">>,     <<"occi+json">>, []}, to},
+	  {{<<"application">>,     <<"xml">>,       []}, to},
+	  {{<<"application">>,     <<"occi+xml">>,  []}, to}
+	 ],
+    CT1 = case erocci_node:type(Node) of
+	      capabilities -> 
+		  [ {{<<"text">>,            <<"uri-list">>,  []}, to} | CT ];
+	      {collection, _} ->
+		  [ {{<<"text">>,            <<"uri-list">>,  []}, to} | CT ];
+	      _ ->
+		  CT
+	  end,
+    {CT1, Req, S};
+
+content_types_provided(Req, {error, _}=S) ->
+    CT = [
+	  {{<<"text">>,            <<"plain">>,     []}, to},
+	  {{<<"text">>,            <<"occi">>,      []}, to},
+	  {{<<"application">>,     <<"json">>,      []}, to},
+	  {{<<"application">>,     <<"occi+json">>, []}, to},
+	  {{<<"application">>,     <<"xml">>,       []}, to},
+	  {{<<"application">>,     <<"occi+xml">>,  []}, to},
+	  {{<<"text">>,            <<"uri-list">>,  []}, to}
+	 ],
+    {CT, Req, S}.
+
 
 content_types_accepted(Req, State) ->
     {[
-      {{<<"text">>,            <<"plain">>,     []}, from_plain},
-      {{<<"text">>,            <<"occi">>,      []}, from_occi},
-      {{<<"application">>,     <<"json">>,      []}, from_json},
-      {{<<"application">>,     <<"occi+json">>, []}, from_json},
-      {{<<"application">>,     <<"xml">>,       []}, from_xml},
-      {{<<"application">>,     <<"occi+xml">>,  []}, from_xml}
+      {{<<"text">>,            <<"plain">>,     []}, from},
+      {{<<"text">>,            <<"occi">>,      []}, from},
+      {{<<"application">>,     <<"json">>,      []}, from},
+      {{<<"application">>,     <<"occi+json">>, []}, from},
+      {{<<"application">>,     <<"xml">>,       []}, from},
+      {{<<"application">>,     <<"occi+xml">>,  []}, from}
      ],
      Req, State}.
 
 
-allow_missing_post(Req, #state{node=#occi_node{type=occi_collection}, op=update}=State) ->
-    {true, Req, State};
-
-allow_missing_post(Req, State) ->
-    {false, Req, State}.
+allow_missing_post(Req, S) ->
+    {false, Req, S}.
 
 
-resource_exists(Req, #state{node=#occi_node{type=occi_collection}, op=update}=State) ->
-    {false, Req, State};
+resource_exists(Req, {error, not_found}=S) ->
+    {false, Req, S};
 
-resource_exists(Req, #state{node=#occi_node{objid=undefined}}=State) ->
-    {false, Req, State};
+resource_exists(Req, S) ->
+    {true, Req, S}.
 
-resource_exists(Req, State) ->
-    {true, Req, State}.
 
-is_authorized(Req, #state{auth=Ref}=State) ->
-    case occi_http_common:auth(Ref, Req) of
-        {true, User} ->
-            {true, Req, State#state{user=User}};
-        false ->
-            {true, Req, State#state{user=anonymous}}
+is_authorized(Req, {error, {unauthorized, Auth}}=S) ->
+    {{false, Auth}, Req, S};
+
+is_authorized(Req, S) ->
+    {true, Req, S}.
+
+
+is_conflict(Req, {ok, Node}=S) ->
+    {entity =:= erocci_node:type(Node), Req, S};
+
+is_conflict(Req, S) ->
+    {false, Req, S}.
+
+
+delete_resource(Req, {ok, Node}=S) ->
+    Mimetype = cowboy_req:header(<<"accept">>, Req),
+    case erocci_node:type(Node) of
+	capabilities ->
+	    delete_mixin(Mimetype, Req, S);
+	{collection, kind} ->
+	    delete(Mimetype, Req, S);
+	{collection, mixin} ->
+	    disassociate(Mimetype, Req, S);
+	_ ->
+	    delete(Mimetype, Req, S)
     end.
 
-is_conflict(Req, #state{node=#occi_node{id=#uri{}, type=occi_resource}}=State) ->
-    {true, Req, State};
-is_conflict(Req, #state{node=#occi_node{id=#uri{}, type=occi_link}}=State) ->
-    {true, Req, State};
-is_conflict(Req, State) ->
-    {false, Req, State}.
+
+to(Req, {error, Err}=S) ->
+    ?error("HTTP listener error: ~p~n", [Err]),
+    {halt, Req, S};
+
+to(Req, {ok, Node}=S) ->
+    Body = occi_rendering:render(cowboy_req:header(<<"accept">>), erocci_store:load(Node)),
+    {[Body, "\n"], Req, S}.
 
 
-delete_resource(Req, #state{node=#occi_node{type=capabilities, data=undefined}}=State) ->
-    {true, Req, State};
-
-delete_resource(Req, #state{node=Node, user=User, auth=Ref}=State) ->
-    case occi_store:delete(Node, #occi_store_ctx{user=User, auth_ref=Ref}) of
-        {error, Reason} ->
-            ?error("Error deleting node: ~p~n", [Reason]),
-            {ok, Req2} = cowboy_req:reply(Reason, Req),
-            {halt, Req2, State};
-        ok ->
-            {true, Req, State}
+from(Req, S) ->
+    Mimetype = cowboy_req:header(<<"accept">>, Req),
+    try occi_rendering:parse(Mimetype, cowboy_req:body(Req)) of
+	Obj ->
+	    case cowboy_req:method(Req) of
+		<<"PUT">> ->
+		    save(Mimetype, Obj, Req, S);
+		<<"POST">> ->
+		    case cowboy_req:match_qs([action], Req) of
+			#{ action := Action } ->
+			    action(Mimetype, Action, Obj, Req, S);
+			_ ->
+			    update(Mimetype, Obj, Req, S)
+		    end;
+		Method ->
+		    throw({invalid_method, Method})
+	    end
+    catch throw:{parse_error, Err} ->
+	    Req2 = errors(400, {parse_error, Err}, Mimetype, Err),
+	    {halt, Req2, S}
     end.
 
-to_occi(Req, State) ->
-    render(Req, State#state{ct=?ct_occi}).
 
-to_plain(Req, State) ->
-    render(Req, State#state{ct=?ct_plain}).
-
-to_uri_list(Req, #state{node=#occi_node{type=capabilities}}=State) ->
-    render(Req, State#state{ct=?ct_uri_list});
-to_uri_list(Req, #state{node=#occi_node{type=occi_collection}}=State) ->
-    render(Req, State#state{ct=?ct_uri_list});
-to_uri_list(Req, State) ->
-    {ok, Req2} = cowboy_req:reply(400, Req),
-    {halt, Req2, State}.
-
-to_json(Req, State) ->
-    render(Req, State#state{ct=?ct_json}).
-
-to_xml(Req, State) ->
-    render(Req, State#state{ct=?ct_xml}).
-
-from_plain(Req, State) ->
-    save_or_update(Req, State#state{ct=?ct_plain}).
-
-from_occi(Req, State) ->
-    save_or_update(Req, State#state{ct=?ct_occi}).
-
-from_json(Req, State) ->
-    save_or_update(Req, State#state{ct=?ct_json}).
-
-from_xml(Req, State) ->
-    save_or_update(Req, State#state{ct=?ct_xml}).
+%% @doc Return trail definitions
+%% @end
+-define(trails_mimetypes, ["text/plain", "text/occi", "application/occi+json", "application/json", "applicaton/occi+xml", "applicaton/xml"]).
+trails() ->
+    Query = trails:trail("/-/", ?MODULE, [],
+			 #{get =>
+			       #{ tags => ["capabilities"],
+				  description => "Retrieve Category instances",
+				  consumes => [],
+				  produces => [ "text/uri-list" | ?trails_mimetypes ]
+				},
+			   post =>
+			       #{ tags => ["capabilities"],
+				  description => "Add a user-defined Mixin instance",
+				  consumes => ?trails_mimetypes,
+				  produces => []},
+			   delete =>
+			       #{ tags => ["capabilities"],
+				  description => "Remove a user-defined Mixin instance",
+				  consumes => ?trails_mimetypes,
+				  produces => []}
+			  }),
+    Categories = erocci_node:data(erocci_store:capabilities()),
+    [ Query | [ category_metadata(occi_category:class(C), C) || C <- Categories ]].
 
 %% @doc Return trail definitions
 %% @end
@@ -248,484 +261,230 @@ trails_all(Opts) ->
 %%%
 %%% Private
 %%%
-save_or_update(Req, #state{op=create}=State) ->
-    save(Req, State);
-save_or_update(Req, #state{op=update}=State) ->
-    update(Req, State);
-save_or_update(Req, #state{op={action, Action}}=State) ->
-    action(Req, State, Action).
-
-
-save(Req, #state{node=#occi_node{type=occi_collection, objid=#occi_cid{class=Cls}}}=State) ->
-    case Cls of
-        kind ->
-            save_entity(Req, State);
-        _ ->
-            save_collection(Req, State)
-    end;
-
-save(Req, #state{node=#occi_node{type=occi_entity}}=State) ->
-    save_entity(Req, State);
-
-save(Req, #state{node=#occi_node{type=occi_resource}}=State) ->
-    save_entity(Req, State);
-
-save(Req, #state{node=#occi_node{type=occi_link}}=State) ->
-    save_entity(Req, State);
-
-save(Req, #state{node=#occi_node{type=undefined}}=State) ->
-    save_entity(Req, State).
-
-
-update(Req, #state{node=#occi_node{type=capabilities}}=State) ->
-    update_capabilities(Req, State);
-
-update(Req, #state{node=#occi_node{type=occi_collection, objid=#occi_cid{}}}=State) ->
-    update_collection(Req, State);
-
-update(Req, #state{node=#occi_node{type=occi_entity}}=State) ->
-    update_entity(Req, State);
-
-update(Req, #state{node=#occi_node{type=occi_resource}}=State) ->
-    update_entity(Req, State);
-
-update(Req, #state{node=#occi_node{type=occi_link}}=State) ->
-    update_entity(Req, State);
-
-update(Req, #state{node=#occi_node{type=undefined}}=State) ->
-    update_entity(Req, State).
-
-
-render(Req, #state{node=Node, ct=#content_type{renderer=Renderer}, filters=Filters, 
-                   user=User, env=Env, auth=AuthRef}=State) ->
-    try parse_load_opts(Req) of
-        {D, L, M} ->
-            Opts = #occi_store_opts{entity_f=Filters, deep=D, limit=L, marker=M},
-            Ctx = #occi_store_ctx{user=User, auth_ref=AuthRef},
-            case occi_store:load(Node, Opts, Ctx) of
-                {ok, #occi_node{type=occi_collection, data=Coll}=Node2} ->
-                    {Body, #occi_env{req=Req2}} = Renderer:render(Node2, Env#occi_env{req=Req}),
-                    {[Body, "\n"], render_collection(Coll, Req2), State};
-                {ok, Node2} ->
-                    {Body, #occi_env{req=Req2}} = Renderer:render(Node2, Env#occi_env{req=Req}),
-                    {[Body, "\n"], Req2, State};
-                {error, Err} ->
-                    ?error("Error loading object: ~p~n", [Err]),
-                    {ok, Req2} = cowboy_req:reply(Err, Req),
-                    {halt, Req2, State}
-            end
-    catch _:_ ->
-            {ok, Req2} = cowboy_req:reply(400, Req),
-            {halt, Req2, State}
+delete_mixin(Mimetype, Req, S) ->
+    try occi_renderer:parse(Mimetype) of
+	Obj ->
+	    case erocci_store:delete_mixin(Obj) of
+		ok ->
+		    {true, Req, S};
+		{error, _}=Err ->
+		    Req2 = errors(Err, Mimetype, Req),
+		    {false, Req2, S}
+	    end
+    catch throw:{parse_error, Err} ->
+	    Req2 = errors(400, {parse_error, Err}, Mimetype, Req),
+	    {halt, Req2, S}
     end.
 
 
-render_collection(#occi_collection{range=undefined}, Req) ->
-    Req;
-render_collection(#occi_collection{marker=Marker, range=Range}, Req) ->
-    Req2 = cowboy_req:set_resp_header(<<"content-range">>, render_range(Range), Req),
-    Req3 = cowboy_req:set_resp_header(<<"accept-ranges">>, <<"entity">>, Req2),
-    case Marker of
-        undefined ->
-            Req3;
-        _ ->
-            {NextUri, Req4} = update_qs_val(<<"marker">>, Marker, Req3),
-            NextLink = <<"<", (occi_uri:to_binary(NextUri#uri{'query'=""}))/binary, ">;next=", 
-                         (occi_uri:to_binary(NextUri))/binary>>,
-            cowboy_req:set_resp_header(<<"link">>, NextLink, Req4)
+delete(Mimetype, Req, {ok, Node}=S) ->
+    case erocci_store:delete(Node) of
+	ok ->
+	    {true, Req, S};
+	{error, _}=Err ->
+	    Req2 = errors(Err, Mimetype, Req),
+	    {false, Req2, S}
     end.
 
 
-render_range({S, E, 0}) when is_integer(S),
-                             is_integer(E) ->
-    iolist_to_binary([<<"entity ">>, integer_to_binary(S), <<"-">>, integer_to_binary(E)]);
-render_range({S, E, T}) when is_integer(S),
-                             is_integer(E),
-                             is_integer(T) ->
-    iolist_to_binary([<<"entity ">>, 
-                      integer_to_binary(S), <<"-">>, 
-                      integer_to_binary(E), <<"/">>, 
-                      integer_to_binary(T)]).
+disassociate(Mimetype, Req, {ok, Node}=S) ->
+    try occi_renderer:parse(Mimetype) of
+	Obj ->
+	    case erocci_store:disassociate(Obj, Node) of
+		ok ->
+		    {true, Req, S};
+		{error, _}=Err ->
+		    Req2 = errors(Err, Mimetype, Req),
+		    {false, Req2, S}
+	    end
+    catch throw:{parse_error, Err} ->
+	    Req2 = errors(400, {parse_error, Err}, Mimetype, Req),
+	    {halt, Req2, S}
+    end.    
+    
 
+save(Mimetype, Obj, Req, {error, not_found}=S) ->
+    Ret = erocci_store:save_entity(Obj, cowboy_req:url(Req)),
+    end_from(Ret, Mimetype, Req, S);
 
-save_entity(Req, #state{user=User, node=Node, auth=Ref, env=Env,
-                        ct=#content_type{parser=Parser, renderer=Renderer}}=State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-    Entity = prepare_entity(Node),
-    Ctx = #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref},
-    case Parser:parse_entity(Body, Req2, Entity) of
-        {error, {parse_error, Err}} ->
-            ?error("Error processing request: ~p~n", [Err]),
-            {false, Req2, State};
-        {error, Err} ->
-            ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};
-        {ok, #occi_resource{}=Res} ->
-            Node2 = occi_node:new(Res, User),
-            case occi_store:save(Node2, Ctx) of
-                ok ->
-                    {RespBody, #occi_env{req=Req3}} = Renderer:render(Node2, Env#occi_env{req=Req2}),
-                    {true, cowboy_req:set_resp_body(RespBody, Req3), State};
-                {error, Reason} ->
-                    ?error("Error creating resource: ~p~n", [Reason]),
-                    {ok, Req3} = cowboy_req:reply(Reason, Req2),
-                    {halt, Req3, State}
-            end;
-        {ok, #occi_link{}=Link} ->
-            Node2 = occi_node:new(Link, User),
-            case occi_store:save(Node2, Ctx) of
-                ok ->
-                    {RespBody, #occi_env{req=Req3}} = Renderer:render(Node2, Env#occi_env{req=Req2}),
-                    {true, cowboy_req:set_resp_body(RespBody, Req3), State};
-                {error, Reason} ->
-                    ?error("Error creating link: ~p~n", [Reason]),
-                    {ok, Req3} = cowboy_req:reply(Reason, Req2),
-                    {halt, Req3, State}
-            end
+save(Mimetype, Obj, Req, {ok, Node}=S) ->
+    case erocci_node:type(Node) of
+	{collection, mixin} ->
+	    Ret = erocci_store:save_collection(Obj, Node),
+	    end_from(Ret, Mimetype, Req, S);
+	entity ->
+	    Ret = erocci_store:save_entity(Obj, cowboy_req:url(Req)),
+	    end_from(Ret, Mimetype, Req, S)
     end.
 
 
-update_entity(Req, #state{node=Node, auth=Ref, user=User, env=Env,
-                          ct=#content_type{parser=Parser, renderer=Renderer}}=State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-    Ctx = #occi_store_ctx{user=User, auth_ref=Ref},
-    case occi_store:load(Node) of
-        {ok, #occi_node{data=Entity}=Node2} ->
-            case Parser:parse_entity(Body, Req2, Entity) of
-                {error, {parse_error, Err}} ->
-                    ?error("Error processing request: ~p~n", [Err]),
-                    {false, Req2, State};
-                {error, Err} ->
-                    ?error("Internal error: ~p~n", [Err]),
-                    {halt, Req2, State};        
-                {ok, Entity2} ->
-                    Node3 = occi_node:set_data(Node2, Entity2),
-                    case occi_store:update(Node3, Ctx) of
-                        ok ->
-                            {RespBody, #occi_env{req=Req3}} = Renderer:render(Node3, Env#occi_env{req=Req2}),
-                            %%{ok, Req4} = cowboy_req:reply(201, Req3),
-                            {true, cowboy_req:set_resp_body(RespBody, Req3), State};
-                        {error, Reason} ->
-                            ?error("Error updating entity: ~p~n", [Reason]),
-                            {ok, Req3} = cowboy_req:reply(Reason, Req2),
-                            {halt, Req3, State}
-                    end
-            end;        
-        {error, Err} ->
-            ?error("Error loading object: ~p~n", [Err]),
-            {halt, Req2, State}
+update(Mimetype, Obj, Req, {ok, Node}=S) ->
+    case erocci_node:type(Node) of
+	capabilites ->
+	    Ret = erocci_store:add_mixin(Obj, Node),
+	    end_from(Ret, Mimetype, Req, S);
+	entity ->
+	    Ret = erocci_store:update_entity(Obj, Node),
+	    end_from(Ret, Mimetype, Req, S);
+	{collection, kind} ->
+	    Ret = erocci_store:save_entity(Obj, Node),
+	    end_from(Ret, Mimetype, Req, S);
+	{collection, mixin} ->
+	    Ret = erocci_store:update_collection(Obj, Node),
+	    end_from(Ret, Mimetype, Req, S)
     end.
 
 
-save_collection(Req, #state{ct=#content_type{parser=Parser},
-                            node=#occi_node{objid=Cid}=Node,
-                            env=Env}=State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-    case Parser:parse_collection(Body, Req2) of
-        {error, {parse_error, Err}} ->
-            ?error("Error processing request: ~p~n", [Err]),
-            {false, Req2, State};
-        {error, Err} ->
-            ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};        
-        {ok, #occi_collection{}=C} ->
-            Coll = occi_collection:new(Cid, occi_collection:get_entities(C)),
-            case occi_store:save(Node#occi_node{type=occi_collection, data=Coll}) of
-                ok ->
-                    {true, Req, State};
-                {error, {no_such_entity, Uri}} ->
-                    ?debug("Invalid entity: ~p~n", [occi_uri:to_string(Uri, Env)]),
-                    {false, Req2, State};
-                {error, Reason} ->
-                    ?error("Error saving collection: ~p~n", [Reason]),
-                    {halt, Req2, State}
-            end
-    end.
+action(Mimetype, Action, Invoke, Req, {ok, Node}=S) ->
+    Ret = erocci_store:action(Action, Invoke, Node),
+    end_from(Ret, Mimetype, Req, S).
 
 
-update_collection(Req, #state{ct=#content_type{parser=Parser}, env=Env,
-                              user=User, auth=Ref,
-                              node=#occi_node{id=#uri{path=Prefix}=Id, type=occi_collection, objid=#occi_cid{class=kind}}=Node}=State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-    Entity = prepare_entity(Node),  
-    case Parser:parse_entity(Body, Req2, Entity) of
-        {error, {parse_error, Err}} ->
-            ?error("Error processing request: ~p~n", [Err]),
-            {false, Req2, State};
-        {error, Err} ->
-            ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};
-        {ok, Entity2} ->
-            Entity3 = case occi_entity:id(Entity2) of
-                          undefined ->
-                              occi_entity:id(Entity2, occi_config:gen_id(Prefix, Env));
-                          #uri{path=Suffix} ->
-                              Id2 = Id#uri{path=filename:join(Prefix, Suffix)},
-                              occi_entity:id(Entity2, Id2)
-                      end,
-            Node2 = occi_node:new(Entity3, User),
-            case occi_store:save(Node2, #occi_store_ctx{user=Node#occi_node.owner, auth_ref=Ref}) of
-                ok ->
-                    {{true, occi_uri:to_binary(Node2#occi_node.id, Env)}, Req2, State};
-                {error, Reason} ->
-                    ?error("Error creating entity: ~p~n", [Reason]),
-                    {halt, Req2, State}
-            end
-    end;
+end_from(ok, _Mimetype, Req, S) ->
+    {true, Req, S};
 
-update_collection(Req, #state{auth=Ref, user=User, ct=#content_type{parser=Parser}, node=#occi_node{objid=Cid}=Node}=State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-    case Parser:parse_collection(Body, Req2) of
-        {error, {parse_error, Err}} ->
-            ?error("Error processing request: ~p~n", [Err]),
-            {false, Req2, State};
-        {error, Err} ->
-            ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};        
-        {ok, #occi_collection{}=C} ->
-            Coll = occi_collection:new(Cid, occi_collection:get_entities(C)),
-            Node2 = Node#occi_node{type=occi_collection, data=Coll},
-            case occi_store:update(Node2, #occi_store_ctx{user=User, auth_ref=Ref}) of
-                ok ->
-                    {true, Req, State};
-                {error, {unknown_entity, Uri}} ->
-                    ?debug("Invalid entity: ~p~n", [Uri]),
-                    {false, Req2, State};
-                {error, Reason} ->
-                    ?error("Error updating collection: ~p~n", [Reason]),
-                    {halt, Req2, State}
-            end
-    end.
+end_from({ok, Obj}, Mimetype, Req, S) ->
+    Body = occi_renderer:render(Mimetype, Obj),
+    {true, cowboy_req:set_resp_body(Body, Req), S};
+
+end_from({error, Err}, Mimetype, Req, S) ->
+    Body = erocci_errors:render(Mimetype, Err),
+    {false, cowboy_req:set_resp_body(Body, Req, S), S}.
 
 
-update_capabilities(Req, #state{user=User, auth=Ref, ct=#content_type{parser=Parser}}=State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-    case Parser:parse_user_mixin(Body, Req2) of
-        {error, {parse_error, Err}} ->
-            ?debug("Error processing request: ~p~n", [Err]),
-            {ok, Req3} = cowboy_req:reply(400, Req2),
-            {halt, Req3, State};
-        {error, Err} ->
-            ?debug("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};        
-        {ok, undefined} ->
-            ?debug("Empty request~n"),
-            {false, Req2, State};
-        {ok, Mixin} ->
-            case occi_store:update(occi_node:new(Mixin, User), #occi_store_ctx{user=User, auth_ref=Ref}) of
-                ok ->
-                    {true, cowboy_req:set_resp_body("OK\n", Req2), State};
-                {error, Reason} ->
-                    ?debug("Error creating resource: ~p~n", [Reason]),
-                    {halt, Req2, State}
-            end
-    end.
-
-
-action(Req, #state{ct=#content_type{parser=Parser, renderer=Renderer}, node=Node,
-                   env=Env, user=User, auth=AuthRef}=State, ActionName) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-    case Parser:parse_action(Body, Req2, prepare_action(Req2, Node, ActionName)) of
-        {error, {parse_error, Err}} ->
-            ?error("Error processing action: ~p~n", [Err]),
-            {false, Req2, State};
-        {error, Err} ->
-            ?error("Internal error: ~p~n", [Err]),
-            {halt, Req2, State};        
-        {ok, #occi_action{}=Action} ->
-            Ctx = #occi_store_ctx{user=User, auth_ref=AuthRef},
-            case occi_store:action(Node, Action, Ctx) of
-                {ok, Node2} ->
-                    {RespBody, #occi_env{req=Req3}} = Renderer:render(Node2, Env#occi_env{req=Req2}),
-                    {true, cowboy_req:set_resp_body(RespBody, Req3), State};
-                {error, Err} ->
-                    ?error("Error triggering action: ~p~n", [Err]),
-                    {halt, Req2, Node}
-            end
-    end.
-
-
-prepare_action(_Req, _Node, Name) ->
-    occi_action:new(#occi_cid{term=?term_to_atom(Name), class=action}).
-
-
-prepare_entity(#occi_node{type=occi_collection, objid=Cid}) ->
-    case occi_store:get(Cid) of
-        {ok, #occi_kind{parent=#occi_cid{term=resource}}=Kind} ->
-            occi_resource:new(Kind);
-        {ok, #occi_kind{parent=#occi_cid{term=link}}=Kind} ->
-            occi_link:new(Kind);
-        _ ->
-            throw({error, internal_error})
-    end;
-
-prepare_entity(#occi_node{type=Type}=Node) 
-  when Type =:= occi_resource; Type =:= occi_link; Type =:= occi_entity ->
-    case occi_store:load(Node) of
-        {ok, #occi_node{data=E}} ->
-            occi_entity:reset(E);
-        {error, Err} ->
-            throw({error, Err})
-    end;
-
-prepare_entity(#occi_node{id=Id, type=undefined}) ->
-    #occi_entity{id=Id}.
-
-set_allowed_methods(Methods, Req, State) ->
+set_allowed_methods(Methods, Req, Node) ->
     << ", ", Allow/binary >> = << << ", ", M/binary >> || M <- Methods >>,
-    {Methods, occi_http_common:set_cors(Req, Allow), State}.
+    {Methods, occi_http_common:set_cors(Req, Allow), Node}.
 
-parse_filters(Req) ->
-    case cowboy_req:qs_val(<<"category">>, Req) of
-        {undefined, _} ->
-            parse_attr_filters([], Req);
-        {Bin, _} ->
-            parse_category_filter(Bin, Req)
+
+credentials(Req) ->
+    case cowboy_req:parse_header(<<"authorization">>, Req) of
+	{<<"basic">>, {User, Password}} ->
+	    erocci_creds:basic(User, Password);
+	_ ->
+	    erocci_creds:anonymous()
     end.
 
-parse_category_filter(Bin, Req) ->
-    case binary:split(occi_uri:decode(Bin), <<"#">>) of
-        [Scheme, Term] ->
-            S = ?scheme_to_atom(<<Scheme/binary, $#>>),
-            T = ?term_to_atom(Term),
-            parse_attr_filters([#occi_cid{scheme=S, term=T, _='_'}], Req);
+
+parse_filters(Qs) ->
+    case parse_filters(Qs, []) of
+	[] ->
+	    undefined;
+	Filters ->
+	    lists:foldl(fun ({'=:=', Name, Val}, Acc) ->
+				erocci_filter:add_eq(Name, Val, Acc);
+			    ({like, '_', Val}, Acc) ->
+				erocci_filter:add_like('_', Val, Acc)
+			end, erocci_filter:new(), Filters)
+    end.
+
+
+parse_filters([], Acc) ->
+    lists:reverse(Acc);
+
+parse_filters([ {<<"category">>, Bin} | Tail ], Acc) ->
+    case parse_category_filter(Bin) of
+	undefined ->
+	    parse_filters(Tail, Acc);
+	Category ->
+	    parse_filters(Tail, [Category | Acc])
+    end;
+
+parse_filters([ {<<"q">>, Bin} | Tail ], Acc) ->
+    Acc2 = parse_attr_filters(binary:split(Bin, <<"+">>), Acc),
+    parse_filters(Tail, Acc2);
+
+parse_filters([ _ | Tail ], Acc) ->
+    parse_filters(Tail, Acc).
+
+
+parse_category_filter(Bin) ->
+    case binary:split(uri:unquote(Bin), <<"#">>) of
+        [Scheme, Term] -> {Scheme, Term};
         _ -> []
     end.
 
-parse_attr_filters(Acc, Req) ->
-    case cowboy_req:qs_val(<<"q">>, Req) of
-        {undefined, _} -> Acc;
-        {Enc, _} ->
-            parse_attr_filter(binary:split(Enc, <<"+">>), Acc)
+
+parse_attr_filters([], Acc) ->
+    Acc;
+
+parse_attr_filters([ Attr | Tail ], Acc) ->
+    case binary:split(uri:unquote(Attr), <<"=">>) of
+        [] -> 
+	    parse_attr_filters(Tail, Acc);
+        [Val] -> 
+	    parse_attr_filters(Tail, [{like, '_', Val} | Acc]);
+        [Name, Val] -> 
+	    parse_attr_filters(Tail, [ {'=:=', Name, Val} | Acc ])
     end.
 
-parse_attr_filter([], Acc) ->
-    lists:reverse(Acc);
-parse_attr_filter([ Attr | Rest ], Acc) ->
-    case binary:split(occi_uri:decode(Attr), <<"=">>) of
-        [] -> parse_attr_filter(Rest, Acc);
-        [Val] -> parse_attr_filter(Rest, [{like, '_', Val} | Acc]);
-        [Name, Val] -> parse_attr_filter(Rest, [ {'=:=', ?attr_to_atom(Name), Val} | Acc ])
-    end.
 
-parse_load_opts(Req) ->
-    parse_marker(Req, {false, -1, 0}).
-
-parse_marker(Req, {D, L, _}) ->
-    case cowboy_req:qs_val(<<"marker">>, Req) of
-        {undefined, _} -> parse_limit(Req, {D, L, 0});
-        {Bin, _} -> parse_limit(Req, {D, L, Bin})
-    end.
-
-parse_limit(Req, {D, _, M}) ->
-    case cowboy_req:qs_val(<<"limit">>, Req) of
-        {undefined, _} -> parse_deep(Req, {D, -1, M});
-        {Bin, _} -> parse_deep(Req, {D, binary_to_integer(Bin), M})
-    end.
-
-parse_deep(Req, {_, L, M}) ->
-    case cowboy_req:qs_val(<<"deep">>, Req) of
-        {true, _} -> {true, L, M};
-        {<<"1">>, _} -> {true, L, M};
-        _ -> {false, L, M}
-    end.
-
-get_node(Path) ->
-    Url = occi_uri:parse(Path),
-    case occi_store:find(#occi_node{id=#uri{path=Url#uri.path}, _='_'}) of
-        {ok, []} -> #occi_node{id=Url};
-        {ok, [#occi_node{}=N]} -> N;
-        {error, Err} ->
-            ?error("Error looking for node:~n~p~n", [Err]),
-            throw({error, Err})
-    end.
-
-get_caps_node([#occi_cid{}=Cid]) ->
-    Node = #occi_node{id=#uri{path="/-/"}, type=capabilities, objid=Cid, _='_'},
-    case occi_store:find(Node) of
-        {ok, []} -> 
-            ?debug("No such mixin: ~p~n", [Cid]),
-            Node#occi_node{data=undefined};
-        {ok, [#occi_node{}=N]} -> 
-            ?debug("Found capabilities node: ~p~n", [N]),
-            N
-    end;
-get_caps_node(_) ->
-    {ok, [#occi_node{}=N]} = occi_store:find(?caps),
-    N.
-
-get_req_url(Req) ->
-    {ReqUrl, _} = cowboy_req:url(Req),
-    occi_uri:parse(ReqUrl).
-
-update_qs_val(Name, Value, Req) ->
-    {Host, _} = cowboy_req:host_url(Req),
-    {Path, _} = cowboy_req:path(Req),
-    {QsVals, Req2} = cowboy_req:qs_vals(Req),
-    {occi_uri:new(Host, Path, lists:keystore(Name, 1, QsVals, {Name, Value})), Req2}.
+errors(Err, Mimetype, Req) ->
+    Body = erocci_errors:render(Err, Mimetype),
+    cowboy_req:set_resp_body(Body, Req).
 
 
-kind_metadata(Kind, Opts) ->
-	Id = occi_kind:get_id(Kind),
-    Name = iolist_to_binary(io_lib:format("~s~s", [Id#occi_cid.scheme, Id#occi_cid.term])),
-	Location = occi_kind:get_location(Kind),
-    Title = occi_kind:get_title(Kind),
-	Tag = <<"Kind: ", Name/binary>>,
+errors(Status, Err, Mimetypes, Req) ->
+    Req2 = errors(Err, Mimetypes, Req),
+    cowboy_req:reply(Status, Req2).
+
+
+category_metadata(kind, C) ->
+    {Scheme, Term} = occi_category:id(C),
+    Name = io_lib:format("~s~s", [Scheme, Term]),
+    Title = occi_category:title(C),
     Map = #{ get => 
-				 #{ tags => [Tag],
-					description => 
-						iolist_to_binary(io_lib:format("Retrieve the collection of entities of the kind ~s (~s)",
-													   [Name, Title])),
-					consumes => [],
-					produces => [ "text/uri-list" | ?trails_mimetypes ]},
-			 post => 
-		 #{ tags => [Tag],
+		 #{ tags => ["category", "kind", Name],
 		    description => 
-				iolist_to_binary(io_lib:format("Creates a new entity the kind ~s (~s)",
-											   [Name, Title])),
+			io_lib:format("Retrieve the collection of entities of the kind ~s (~s)",
+				      [Name, Title]),
+		    consumes => [],
+		    produces => [ "text/uri-list" | ?trails_mimetypes ]},
+	     post => 
+		 #{ tags => ["category", "kind", Name],
+		    description => 
+			io_lib:format("Creates a new entity the kind ~s (~s)",
+				      [Name, Title]),
 		    consumes => ?trails_mimetypes,
 		    produces => ?trails_mimetypes},
 	     delete => 
-		 #{ tags => [Tag],
+		 #{ tags => ["category", "kind", Name],
 		    descriptionn =>
-				iolist_to_binary(io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
+			io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title]),
 		    consumes => [],
 		    produces => []}},
-    trails:trail(occi_uri:to_binary(Location), ?MODULE, Opts, Map).
+    trails:trail(occi_category:location(C), ?MODULE, [], Map);
 
-
-mixin_metadata(Mixin, Opts) ->
-	Id = occi_mixin:get_id(Mixin),
-    Name = iolist_to_binary(io_lib:format("~s~s", [Id#occi_cid.scheme, Id#occi_cid.term])),
-	Location = occi_mixin:get_location(Mixin),
-    Title = occi_mixin:get_title(Mixin),
-	Tag = <<"Mixin: ", Name/binary>>,
+category_metadata(mixin, C) ->
+    {Scheme, Term} = occi_category:id(C),
+    Name = io_lib:format("~s~s", [Scheme, Term]),
+    Title = occi_category:title(C),
     Map = #{ get => 
-		 #{ tags => [Tag],
+		 #{ tags => ["category", "mixin", Name],
 		    description => 
-				iolist_to_binary(io_lib:format("Retrieve the collection of entities associated with mixin ~s (~s)",
-											   [Name, Title])),
+			io_lib:format("Retrieve the collection of entities associated with mixin ~s (~s)",
+				      [Name, Title]),
 		    consumes => [],
 		    produces => [ "text/uri-list" | ?trails_mimetypes ]},
 	     put => 
-		 #{ tags => [Tag],
+		 #{ tags => ["category", "mixin", Name],
 		    description => 
-				iolist_to_binary(io_lib:format("Set the full collection of entities associated with mixin ~s (~s)",
-											   [Name, Title])),
+			io_lib:format("Set the full collection of entities associated with mixin ~s (~s)",
+				      [Name, Title]),
 		    consumes => ?trails_mimetypes,
 		    produces => ?trails_mimetypes},
 	     post => 
-		 #{ tags => [Tag],
+		 #{ tags => ["category", "mixin", Name],
 		    description => 
-				iolist_to_binary(io_lib:format("Add entities to the collection of entities associated with mixin ~s (~s)",
-											   [Name, Title])),
+			io_lib:format("Add entities to the collection of entities associated with mixin ~s (~s)",
+				      [Name, Title]),
 		    consumes => ?trails_mimetypes,
 		    produces => ?trails_mimetypes},
 	     delete => 
-		 #{ tags => [Tag],
+		 #{ tags => ["category", "kind", Name],
 		    descriptionn =>
-				iolist_to_binary(io_lib:format("Remove entities from the mixin collection ~s (~s)", 
-											   [Name, Title])),
+			io_lib:format("Remove entities from the mixin collection ~s (~s)", 
+				      [Name, Title]),
 		    consumes => [],
 		    produces => []}},
-    trails:trail(occi_uri:to_binary(Location), ?MODULE, Opts, Map).
+    trails:trail(occi_category:location(C), ?MODULE, [], Map).
