@@ -167,7 +167,16 @@ to(Req, {error, Err}=S) ->
     {halt, Req, S};
 
 to(Req, {ok, Node}=S) ->
-    Body = occi_rendering:render(cowboy_req:header(<<"accept">>), erocci_store:load(Node)),
+    Obj = case erocci_node:type(Node) of
+	      {collection, _} ->
+		  %% @todo parse limits
+		  Start = 0,
+		  Limit = undefined,
+		  erocci_store:load_collection(Node, Start, Limit);
+	      _ ->
+		  erocci_store:load(Node)
+	  end,
+    Body = occi_rendering:render(cowboy_req:header(<<"accept">>), Obj),
     {[Body, "\n"], Req, S}.
 
 
@@ -196,7 +205,8 @@ from(Req, S) ->
 
 %% @doc Return trail definitions
 %% @end
--define(trails_mimetypes, ["text/plain", "text/occi", "application/occi+json", "application/json", "applicaton/occi+xml", "applicaton/xml"]).
+-define(trails_mimetypes, ["text/plain", "text/occi", "application/occi+json", 
+			   "application/json", "applicaton/occi+xml", "applicaton/xml"]).
 trails() ->
     Query = trails:trail("/-/", ?MODULE, [],
 			 #{get =>
@@ -262,7 +272,7 @@ trails_all(Opts) ->
 %%% Private
 %%%
 delete_mixin(Mimetype, Req, S) ->
-    try occi_renderer:parse(Mimetype) of
+    try occi_rendering:parse(Mimetype) of
 	Obj ->
 	    case erocci_store:delete_mixin(Obj) of
 		ok ->
@@ -288,7 +298,7 @@ delete(Mimetype, Req, {ok, Node}=S) ->
 
 
 disassociate(Mimetype, Req, {ok, Node}=S) ->
-    try occi_renderer:parse(Mimetype) of
+    try occi_rendering:parse(Mimetype) of
 	Obj ->
 	    case erocci_store:disassociate(Obj, Node) of
 		ok ->
@@ -304,16 +314,16 @@ disassociate(Mimetype, Req, {ok, Node}=S) ->
     
 
 save(Mimetype, Obj, Req, {error, not_found}=S) ->
-    Ret = erocci_store:save_entity(Obj, cowboy_req:url(Req)),
+    Ret = erocci_store:save(Obj, cowboy_req:url(Req)),
     end_from(Ret, Mimetype, Req, S);
 
 save(Mimetype, Obj, Req, {ok, Node}=S) ->
     case erocci_node:type(Node) of
 	{collection, mixin} ->
-	    Ret = erocci_store:save_collection(Obj, Node),
+	    Ret = erocci_store:associate(Obj, Node),
 	    end_from(Ret, Mimetype, Req, S);
 	entity ->
-	    Ret = erocci_store:save_entity(Obj, cowboy_req:url(Req)),
+	    Ret = erocci_store:save(Obj, cowboy_req:url(Req)),
 	    end_from(Ret, Mimetype, Req, S)
     end.
 
@@ -324,13 +334,13 @@ update(Mimetype, Obj, Req, {ok, Node}=S) ->
 	    Ret = erocci_store:add_mixin(Obj, Node),
 	    end_from(Ret, Mimetype, Req, S);
 	entity ->
-	    Ret = erocci_store:update_entity(Obj, Node),
+	    Ret = erocci_store:update(Obj, Node),
 	    end_from(Ret, Mimetype, Req, S);
 	{collection, kind} ->
-	    Ret = erocci_store:save_entity(Obj, Node),
+	    Ret = erocci_store:save(Obj, Node),
 	    end_from(Ret, Mimetype, Req, S);
 	{collection, mixin} ->
-	    Ret = erocci_store:update_collection(Obj, Node),
+	    Ret = erocci_store:full_associate(Obj, Node),
 	    end_from(Ret, Mimetype, Req, S)
     end.
 
@@ -344,7 +354,7 @@ end_from(ok, _Mimetype, Req, S) ->
     {true, Req, S};
 
 end_from({ok, Obj}, Mimetype, Req, S) ->
-    Body = occi_renderer:render(Mimetype, Obj),
+    Body = occi_rendering:render(Mimetype, Obj),
     {true, cowboy_req:set_resp_body(Body, Req), S};
 
 end_from({error, Err}, Mimetype, Req, S) ->
