@@ -226,8 +226,8 @@ trails() ->
 				  consumes => ?trails_mimetypes,
 				  produces => []}
 			  }),
-    Categories = erocci_node:data(erocci_store:capabilities()),
-    [ Query | [ category_metadata(occi_category:class(C), C) || C <- Categories ]].
+    [ Query | [ category_metadata(occi_category:class(C), C) 
+		|| C <- erocci_store:capabilities() ]].
 
 %% @doc Return trail definitions
 %% @end
