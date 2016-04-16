@@ -16,5 +16,8 @@
    ]
   },
   {registered, []},
-  {env, [{pool, 10}]}
+  {env, [
+	 {pool, 10}
+	,{realm, <<"erocci">>}
+	]}
  ]}.
