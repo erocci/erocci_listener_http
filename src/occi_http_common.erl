@@ -36,24 +36,19 @@
 start(Ref, Protocol, Props) ->
     application:ensure_all_started(cowboy),
     application:ensure_all_started(occi_authnz),
-    case ets:info(Ref) of
-		undefined ->
-			Ref = ets:new(Ref, [set, public, {keypos, 1}, named_table]),
-			ets:insert(Ref, {routes, []});
-		_ -> ok
-    end,
+	Trails = trails:trails([occi_http_handler,
+							cowboy_swagger_handler]),
+	trails:store(Trails),
     Pool = proplists:get_value(pool, Props, ?DEFAULT_POOL),
+	Dispatch = trails:single_host_compile(Trails),
+	CowboyOpts = [{env, [{dispatch, Dispatch}]}],
     case proplists:get_value(auth, Props) of
 		undefined ->
-			Routes = lists:flatten([ets:lookup_element(Ref, routes, 2), get_occi_handler(undefined)]),
-			Env = [{dispatch, cowboy_router:compile([{'_', Routes}])}],
-			cowboy:Protocol(Ref, Pool, Props, [{env, Env}]);
+			cowboy:Protocol(Ref, Pool, Props, CowboyOpts);
 		{AuthMod, AuthOpts} ->
 			case occi_authnz:start_link(AuthMod, AuthOpts) of
 				{ok, Pid} ->
-					Routes = lists:flatten([ets:lookup_element(Ref, routes, 2), get_occi_handler(Pid)]),
-					Env = [{dispatch, cowboy_router:compile([{'_', Routes}])}],
-					cowboy:Protocol(Ref, Pool, Props, [{env, Env}, {auth, Pid}]);
+					cowboy:Protocol(Ref, Pool, Props, [ {auth, Pid} | CowboyOpts]);
 				ignore ->
 					throw({error, invalid_authentication_backend});
 				{error, Err} ->
@@ -66,7 +61,7 @@ stop(Ref) ->
     cowboy:stop_listener(Ref).
 
 
-												% Convenience function for setting CORS headers
+%% Convenience function for setting CORS headers
 -define(EXPOSE_HEADERS, <<"server,category,link,x-occi-attribute,x-occi-location,location">>).
 set_cors(Req, Methods) ->
     case cowboy_req:header(<<"origin">>, Req) of

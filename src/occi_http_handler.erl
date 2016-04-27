@@ -1,4 +1,4 @@
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
+% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %%% @copyright (c) 2013-2016 Jean Parpaillon
 %%% 
 %%% This file is provided to you under the license described
@@ -37,6 +37,10 @@
          from_occi/2,
          from_json/2,
          from_xml/2]).
+
+%% Trails
+-behaviour(trails_handler).
+-export([trails/0]).
 
 -record(state, {op      :: atom(), 
                 node, 
@@ -200,6 +204,37 @@ from_json(Req, State) ->
 
 from_xml(Req, State) ->
     save_or_update(Req, State#state{ct=?ct_xml}).
+
+%% @doc Return trail definitions
+%% @end
+-define(trails_mimetypes, ["text/plain", "text/occi", "application/occi+json", 
+			   "application/json", "applicaton/occi+xml", "applicaton/xml"]).
+trails() ->
+    Query = trails:trail("/-/", ?MODULE, [],
+			 #{get =>
+			       #{ tags => [<<"Query Interface">>],
+					  description => <<"Retrieve Category instances">>,
+					  consumes => [],
+					  produces => [ "text/uri-list" | ?trails_mimetypes ]
+				},
+			   post =>
+			       #{ tags => [<<"Query Interface">>],
+					  description => <<"Add a user-defined Mixin instance">>,
+					  consumes => ?trails_mimetypes,
+					  produces => []},
+			   delete =>
+			       #{ tags => [<<"Query Interface">>],
+					  description => <<"Remove a user-defined Mixin instance">>,
+					  consumes => ?trails_mimetypes,
+					  produces => []}
+			  }),
+	{ Kinds, Mixins, _ } = occi_category_mgr:find_all(),
+	Query2 = lists:foldl(fun (Kind, Acc) ->
+	 							 [ kind_metadata(Kind) | Acc ]
+						 end, [Query], Kinds),
+	lists:foldl(fun (Mixin, Acc) ->
+	 					[ mixin_metadata(Mixin) | Acc ]
+	 			end, Query2, Mixins).
 
 %%%
 %%% Private
@@ -619,3 +654,69 @@ update_qs_val(Name, Value, Req) ->
     {Path, _} = cowboy_req:path(Req),
     {QsVals, Req2} = cowboy_req:qs_vals(Req),
     {occi_uri:new(Host, Path, lists:keystore(Name, 1, QsVals, {Name, Value})), Req2}.
+
+
+kind_metadata(Kind) ->
+	Id = occi_kind:get_id(Kind),
+    Name = iolist_to_binary(io_lib:format("~s~s", [Id#occi_cid.scheme, Id#occi_cid.term])),
+	Location = occi_kind:get_location(Kind),
+    Title = occi_kind:get_title(Kind),
+	Tag = <<"Kind: ", Name/binary>>,
+    Map = #{ get => 
+				 #{ tags => [Tag],
+					description => 
+						iolist_to_binary(io_lib:format("Retrieve the collection of entities of the kind ~s (~s)",
+													   [Name, Title])),
+					consumes => [],
+					produces => [ "text/uri-list" | ?trails_mimetypes ]},
+			 post => 
+		 #{ tags => [Tag],
+		    description => 
+				iolist_to_binary(io_lib:format("Creates a new entity the kind ~s (~s)",
+											   [Name, Title])),
+		    consumes => ?trails_mimetypes,
+		    produces => ?trails_mimetypes},
+	     delete => 
+		 #{ tags => [Tag],
+		    descriptionn =>
+				iolist_to_binary(io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
+		    consumes => [],
+		    produces => []}},
+    trails:trail(occi_uri:to_binary(Location), ?MODULE, [], Map).
+
+
+mixin_metadata(Mixin) ->
+	Id = occi_mixin:get_id(Mixin),
+    Name = iolist_to_binary(io_lib:format("~s~s", [Id#occi_cid.scheme, Id#occi_cid.term])),
+	Location = occi_mixin:get_location(Mixin),
+    Title = occi_mixin:get_title(Mixin),
+	Tag = <<"Mixin: ", Name/binary>>,
+    Map = #{ get => 
+		 #{ tags => [Tag],
+		    description => 
+				iolist_to_binary(io_lib:format("Retrieve the collection of entities associated with mixin ~s (~s)",
+											   [Name, Title])),
+		    consumes => [],
+		    produces => [ "text/uri-list" | ?trails_mimetypes ]},
+	     put => 
+		 #{ tags => [Tag],
+		    description => 
+				iolist_to_binary(io_lib:format("Set the full collection of entities associated with mixin ~s (~s)",
+											   [Name, Title])),
+		    consumes => ?trails_mimetypes,
+		    produces => ?trails_mimetypes},
+	     post => 
+		 #{ tags => [Tag],
+		    description => 
+				iolist_to_binary(io_lib:format("Add entities to the collection of entities associated with mixin ~s (~s)",
+											   [Name, Title])),
+		    consumes => ?trails_mimetypes,
+		    produces => ?trails_mimetypes},
+	     delete => 
+		 #{ tags => [Tag],
+		    descriptionn =>
+				iolist_to_binary(io_lib:format("Remove entities from the mixin collection ~s (~s)", 
+											   [Name, Title])),
+		    consumes => [],
+		    produces => []}},
+    trails:trail(occi_uri:to_binary(Location), ?MODULE, [], Map).
