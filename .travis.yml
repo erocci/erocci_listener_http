@@ -3,6 +3,10 @@ otp_release:
    - 18.0
    - 18.1
 
+branches:
+  only:
+    - master
+
 sudo: false
 
 addons:
