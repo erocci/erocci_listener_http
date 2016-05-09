@@ -318,7 +318,7 @@ init_node(Path, Creds, Filter, Req) ->
 
 parse(Req, Next) ->
     Mimetype = cowboy_req:header(<<"accept">>, Req),
-    try occi_rendering:parse(Mimetype) of
+    try occi_rendering:parse(Mimetype, cowboy_req:body(Req)) of
 	Obj ->
 	    Next(Obj)
     catch throw:{parse_error, _}=Err ->
@@ -376,8 +376,9 @@ parse_filters([ _ | Tail ], Acc) ->
 
 
 parse_category_filter(Bin) ->
-    case binary:split(uri:unquote(Bin), <<"#">>) of
-        [Scheme, Term] -> {Scheme, Term};
+    case binary:split(uri:unquote(Bin), [<<$#>>], [trim_all]) of
+        [Scheme, Term] -> [{'=:=', scheme, Scheme}, {'=:=', term, Term}];
+	[Scheme] -> [{'=:=', scheme, Scheme}];
         _ -> []
     end.
 
