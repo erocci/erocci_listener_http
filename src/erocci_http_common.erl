@@ -20,8 +20,7 @@
 
 %% API
 -export([start/3,
-		 stop/1,
-		 set_cors/2]).
+		 stop/1]).
 
 
 %% @doc Start an HTTP listener

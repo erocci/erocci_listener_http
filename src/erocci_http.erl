@@ -15,9 +15,9 @@
 %%%-------------------------------------------------------------------
 -module(erocci_http).
 
--behaviour(occi_listener).
+-behaviour(erocci_listener).
 
--include_lib("erocci_core/include/occi_log.hrl").
+-include_lib("erocci_core/include/erocci_log.hrl").
 
 %% occi_listener callbacks
 -export([start_link/2,

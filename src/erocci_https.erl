@@ -13,11 +13,11 @@
 %%% @end
 %%% Created : 18 Mar 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 %%%-------------------------------------------------------------------
--module(occi_https).
+-module(erocci_https).
 
--behaviour(occi_listener).
+-behaviour(erocci_listener).
 
--include_lib("erocci_core/include/occi_log.hrl").
+-include_lib("erocci_core/include/erocci_log.hrl").
 
 %% occi_listener callbacks
 -export([start_link/2,
