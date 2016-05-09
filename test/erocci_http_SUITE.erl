@@ -7,7 +7,7 @@
 %%% @end
 %%% Created :  4 Feb 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 %%%-------------------------------------------------------------------
--module(occi_http_SUITE).
+-module(erocci_http_SUITE).
 
 -compile([export_all]).
 
@@ -15,7 +15,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("kernel/include/file.hrl").
 
--include_lib("erocci_core/include/occi.hrl").
+-include_lib("erocci_core/include/erocci.hrl").
 
 -define(PORT, 9999).
 -define(NAME, "http://localhost:9999").
