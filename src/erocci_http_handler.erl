@@ -19,6 +19,7 @@
 %% REST Callbacks
 -export([init/2, 
          allowed_methods/2,
+	 generate_etag/2,
          is_authorized/2,
          resource_exists/2,
          is_conflict/2,
@@ -64,6 +65,13 @@ allowed_methods(Req, {error, method_not_allowed}=S) ->
 
 allowed_methods(Req, S) ->
     {?ALL_METHODS, Req, S}.
+
+
+generate_etag(_Req, {error, _}=S) ->
+    {undefined, S};
+
+generate_etag(_Req, {ok, _, Serial}=S) ->
+    {Serial, S}.
 
 
 -define(entity_content_type(M), [{{<<"text">>,            <<"plain">>,     []}, M},
@@ -235,8 +243,8 @@ init_bounded_collection(Category, Creds, Filter, Req) ->
     S = case {occi_category:class(Category), cowboy_req:method(Req)} of
 	    {_, <<"GET">>} ->
 		case parse_range(Req) of
-		    {ok, Page, Number} ->
-			erocci_store:collection(Category, Creds, Filter, Page, Number);
+		    {ok, Start, Number} ->
+			erocci_store:collection(Category, Creds, Filter, Start, Number);
 		    {error, _}=Err ->
 			Err
 		end;
@@ -286,8 +294,8 @@ init_node(Path, Creds, Filter, Req) ->
     S = case cowboy_req:method(Req) of
 	    <<"GET">> ->
 		case parse_range(Req) of
-		    {ok, Page, Number} ->
-			erocci_store:get(Path, Creds, Filter, Page, Number);
+		    {ok, Start, Number} ->
+			erocci_store:get(Path, Creds, Filter, Start, Number);
 		    {error, _}=Err ->
 			Err
 		end;
@@ -317,13 +325,7 @@ init_node(Path, Creds, Filter, Req) ->
 
 
 parse(Req, Next) ->
-    Mimetype = cowboy_req:header(<<"accept">>, Req),
-    try occi_rendering:parse(Mimetype, cowboy_req:body(Req)) of
-	Obj ->
-	    Next(Obj)
-    catch throw:{parse_error, _}=Err ->
-	    {error, Err}
-    end.    
+    Next({cowboy_req:header(<<"content-type">>, Req), cowboy_req:body(Req)}).
 
 
 credentials(Req) ->
@@ -399,10 +401,8 @@ parse_attr_filters([ Attr | Tail ], Acc) ->
 
 parse_range(Req) ->
     try cowboy_req:match_qs([{page, int, 0}, {number, int, 0}], Req) of
-	#{ page := Page, number := 0 } ->
-	    {ok, Page, undefined};
 	#{ page := Page, number := Number } ->
-	    {ok, Page, Number}
+	    {ok, (Page-1) * Number, Number}
     catch error:{case_clause, _} ->
 	    {error, {parse_error, range}}
     end.
