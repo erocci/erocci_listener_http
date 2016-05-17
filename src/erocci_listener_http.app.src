@@ -12,8 +12,6 @@
     cowboy,
     trails,
     cowboy_swagger
-    erocci_authnz,
-    erocci_backend_mnesia
    ]
   },
   {registered, []},
