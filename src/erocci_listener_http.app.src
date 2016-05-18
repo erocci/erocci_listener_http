@@ -11,7 +11,8 @@
     stdlib,
     cowboy,
     trails,
-    cowboy_swagger
+    cowboy_swagger,
+    jiffy
    ]
   },
   {registered, []},
