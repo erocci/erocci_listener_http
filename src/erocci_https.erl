@@ -25,10 +25,10 @@
 
 start_link(Ref, Opts) ->
     ?info("Starting HTTPS listener~n", []),
-    occi_http_common:start(Ref, start_https, validate_cfg(Opts)).
+    erocci_http_common:start(Ref, start_https, validate_cfg(Opts)).
 
 terminate(Ref, _Reason) ->
-    occi_http_common:stop(Ref).
+    erocci_http_common:stop(Ref).
 
 %%%
 %%% Priv
