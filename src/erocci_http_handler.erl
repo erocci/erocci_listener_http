@@ -67,11 +67,11 @@ allowed_methods(Req, S) ->
     {?ALL_METHODS, Req, S}.
 
 
-generate_etag(_Req, {error, _}=S) ->
-    {undefined, S};
+generate_etag(Req, {error, _}=S) ->
+    {undefined, Req, S};
 
-generate_etag(_Req, {ok, _, Serial}=S) ->
-    {Serial, S}.
+generate_etag(Req, {ok, _, Serial}=S) ->
+    {Serial, Req, S}.
 
 
 -define(entity_content_type(M), [{{<<"text">>,            <<"plain">>,     []}, M},
@@ -80,9 +80,9 @@ generate_etag(_Req, {ok, _, Serial}=S) ->
 				 {{<<"application">>,     <<"occi+json">>, []}, M},
 				 {{<<"application">>,     <<"xml">>,       []}, M},
 				 {{<<"application">>,     <<"occi+xml">>,  []}, M}]).
--define(content_type(M), [ {{<<"text">>,    <<"uri-list">>,  []}, M} | ?entity_content_type(M) ]).
+-define(content_type(M), ?entity_content_type(M) ++ [ {{<<"text">>,    <<"uri-list">>,  []}, M} ]).
 
-content_types_provided(Req, {ok, Obj}=S) ->
+content_types_provided(Req, {ok, Obj, _Serial}=S) ->
     case occi_type:type(Obj) of
 	categories -> {?content_type(to), Req, S};
 	collection -> {?content_type(to), Req, S};
@@ -90,7 +90,7 @@ content_types_provided(Req, {ok, Obj}=S) ->
     end;
 
 content_types_provided(Req, S) ->
-    {?content_type(from), Req, S}.
+    {?content_type(to), Req, S}.
 
 
 content_types_accepted(Req, S) ->
@@ -136,14 +136,14 @@ to(Req, {error, Err}=S) ->
     ?error("HTTP listener error: ~p~n", [Err]),
     {halt, errors(Err, Req), S};
 
-to(Req, {ok, Obj}=S) ->
+to(Req, {ok, Obj, _Serial}) ->
     Mimetype = cowboy_req:header(<<"accept">>, Req),
-    Body = occi_rendering:render(Mimetype, Obj, 
-				 occi_uri:from_string(cowboy_req:url(Req))),
-    {[Body, "\n"], Req, S}.
+    Ctx = occi_uri:from_string(cowboy_req:url(Req)),
+    Body = occi_rendering:render(Mimetype, Obj, Ctx),
+    {[Body, "\n"], Req, {ok, Obj}}.
 
 
-from(Req, {ok, Obj}=S) ->
+from(Req, {ok, Obj, _Serial}=S) ->
     Mimetype = cowboy_req:header(<<"accept">>, Req),
     Body = occi_rendering:render(Mimetype, Obj),
     {true, cowboy_req:set_resp_body([Body, "\n"], Req), S};
@@ -348,7 +348,7 @@ errors(Err, Req) ->
 parse_filters(Qs) ->
     case parse_filters(Qs, []) of
 	[] ->
-	    undefined;
+	    [];
 	Filters ->
 	    lists:foldl(fun ({'=:=', Name, Val}, Acc) ->
 				erocci_filter:add_eq(Name, Val, Acc);
@@ -472,10 +472,10 @@ category_metadata(mixin, Location, C, Acc) ->
 -define(EXPOSE_HEADERS, <<"server,category,link,x-occi-attribute,x-occi-location,location">>).
 cors(Methods, Req) ->
     case cowboy_req:header(<<"origin">>, Req) of
-	{undefined, Req1} -> 
-	    Req1;
-	{Origin, Req1} ->
-	    Req2 = cowboy_req:set_resp_header(<<"access-control-allow-methods">>, Methods, Req1),
-	    Req3 = cowboy_req:set_resp_header(<<"access-control-allow-origin">>, Origin, Req2),
-	    cowboy_req:set_resp_header(<<"access-control-expose-headers">>, ?EXPOSE_HEADERS, Req3)
+	undefined -> 
+	    Req;
+	Origin ->
+	    Req1 = cowboy_req:set_resp_header(<<"access-control-allow-methods">>, Methods, Req),
+	    Req2 = cowboy_req:set_resp_header(<<"access-control-allow-origin">>, Origin, Req1),
+	    cowboy_req:set_resp_header(<<"access-control-expose-headers">>, ?EXPOSE_HEADERS, Req2)
     end.
