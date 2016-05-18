@@ -154,24 +154,24 @@ from(Req, {error, Err}=S) ->
 
 %% @doc Return trail definitions
 %% @end
--define(trails_mimetypes, ["text/plain", "text/occi", "application/occi+json", 
-			   "application/json", "applicaton/occi+xml", "applicaton/xml"]).
+-define(trails_mimetypes, [<<"text/plain">>, <<"text/occi">>, <<"application/occi+json">>, 
+			   <<"application/json">>, <<"applicaton/occi+xml">>, <<"applicaton/xml">>]).
 trails() ->
-    Query = trails:trail("/-/", ?MODULE, [],
+    Query = trails:trail(<<"/-/">>, ?MODULE, [],
 			 #{get =>
-			       #{ tags => ["capabilities"],
-				  description => "Retrieve Category instances",
+			       #{ tags => [<<"Query Interface">>],
+				  description => <<"Retrieve Category instances">>,
 				  consumes => [],
-				  produces => [ "text/uri-list" | ?trails_mimetypes ]
+				  produces => [ <<"text/uri-list">> | ?trails_mimetypes ]
 				},
 			   post =>
-			       #{ tags => ["capabilities"],
-				  description => "Add a user-defined Mixin instance",
+			       #{ tags => [<<"Query Interface">>],
+				  description => <<"Add a user-defined Mixin instance">>,
 				  consumes => ?trails_mimetypes,
 				  produces => []},
 			   delete =>
-			       #{ tags => ["capabilities"],
-				  description => "Remove a user-defined Mixin instance",
+			       #{ tags => [<<"Query Interface">>],
+				  description => <<"Remove a user-defined Mixin instance">>,
 				  consumes => ?trails_mimetypes,
 				  produces => []}
 			  }),
@@ -410,60 +410,67 @@ parse_range(Req) ->
 
 category_metadata(kind, Location, C, Acc) ->
     {Scheme, Term} = occi_category:id(C),
-    Name = io_lib:format("~s~s", [Scheme, Term]),
+    Name = iolist_to_binary(io_lib:format("~s~s", [Scheme, Term])),
     Title = occi_category:title(C),
     Map = #{ get => 
-		 #{ tags => ["category", "kind", Name],
+		 #{ tags => [Name],
 		    description => 
-			io_lib:format("Retrieve the collection of entities of the kind ~s (~s)",
-				      [Name, Title]),
+			iolist_to_binary(
+			  io_lib:format("Retrieve the collection of entities of the kind ~s (~s)",
+					[Name, Title])),
 		    consumes => [],
-		    produces => [ "text/uri-list" | ?trails_mimetypes ]},
+		    produces => [ <<"text/uri-list">> | ?trails_mimetypes ]},
 	     post => 
-		 #{ tags => ["category", "kind", Name],
+		 #{ tags => [Name],
 		    description => 
-			io_lib:format("Creates a new entity the kind ~s (~s)",
-				      [Name, Title]),
+			iolist_to_binary(
+			  io_lib:format("Creates a new entity the kind ~s (~s)",
+					[Name, Title])),
 		    consumes => ?trails_mimetypes,
 		    produces => ?trails_mimetypes},
 	     delete => 
-		 #{ tags => ["category", "kind", Name],
-		    descriptionn =>
-			io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title]),
+		 #{ tags => [Name],
+		    description =>
+			iolist_to_binary(
+			  io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
 		    consumes => [],
 		    produces => []}},
     [ trails:trail(Location, ?MODULE, [], Map) | Acc ];
 
 category_metadata(mixin, Location, C, Acc) ->
     {Scheme, Term} = occi_category:id(C),
-    Name = io_lib:format("~s~s", [Scheme, Term]),
+    Name = iolist_to_binary(io_lib:format("~s~s", [Scheme, Term])),
     Title = occi_category:title(C),
     Map = #{ get => 
-		 #{ tags => ["category", "mixin", Name],
+		 #{ tags => [Name],
 		    description => 
-			io_lib:format("Retrieve the collection of entities associated with mixin ~s (~s)",
-				      [Name, Title]),
+			iolist_to_binary(
+			  io_lib:format("Retrieve the collection of entities associated with mixin ~s (~s)",
+					[Name, Title])),
 		    consumes => [],
-		    produces => [ "text/uri-list" | ?trails_mimetypes ]},
+		    produces => [ <<"text/uri-list">> | ?trails_mimetypes ]},
 	     put => 
-		 #{ tags => ["category", "mixin", Name],
+		 #{ tags => [Name],
 		    description => 
-			io_lib:format("Set the full collection of entities associated with mixin ~s (~s)",
-				      [Name, Title]),
+			iolist_to_binary(
+			  io_lib:format("Set the full collection of entities associated with mixin ~s (~s)",
+					[Name, Title])),
 		    consumes => ?trails_mimetypes,
 		    produces => ?trails_mimetypes},
 	     post => 
-		 #{ tags => ["category", "mixin", Name],
+		 #{ tags => [Name],
 		    description => 
-			io_lib:format("Add entities to the collection of entities associated with mixin ~s (~s)",
-				      [Name, Title]),
+			iolist_to_binary(
+			  io_lib:format("Add entities to the collection of entities associated with mixin ~s (~s)",
+					[Name, Title])),
 		    consumes => ?trails_mimetypes,
 		    produces => ?trails_mimetypes},
 	     delete => 
-		 #{ tags => ["category", "kind", Name],
-		    descriptionn =>
-			io_lib:format("Remove entities from the mixin collection ~s (~s)", 
-				      [Name, Title]),
+		 #{ tags => [Name],
+		    description =>
+			iolist_to_binary(
+			  io_lib:format("Remove entities from the mixin collection ~s (~s)", 
+					[Name, Title])),
 		    consumes => [],
 		    produces => []}},
     [ trails:trail(Location, ?MODULE, [], Map) | Acc ].
