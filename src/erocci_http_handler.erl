@@ -25,6 +25,7 @@
          is_conflict/2,
 	 malformed_request/2,
          delete_resource/2,
+	 valid_entity_length/2,
          content_types_provided/2,
          content_types_accepted/2]).
 
@@ -72,6 +73,13 @@ generate_etag(Req, {error, _}=S) ->
 
 generate_etag(Req, {ok, _, Serial}=S) ->
     {Serial, Req, S}.
+
+
+valid_entity_length(Req, {error, badlength}=S) ->
+    {false, Req, S};
+
+valid_entity_length(Req, S) ->
+    {true, Req, S}.
 
 
 -define(entity_content_type(M), [{{<<"text">>,            <<"plain">>,     []}, M},
@@ -222,110 +230,120 @@ trails_all(Opts) ->
 %%% Private
 %%%
 init_capabilities(Creds, Filter, Req) ->
-    S = case cowboy_req:method(Req) of
-	    <<"GET">> ->
-		erocci_store:capabilities(Creds, Filter);
-	    <<"DELETE">> ->
-		parse(Req, fun (Obj) -> erocci_store:delete_mixin(Obj, Creds) end);
-	    <<"POST">> ->
-		parse(Req, fun(Obj) -> erocci_store:new_mixin(Obj, Creds) end);
-	    <<"OPTIONS">> ->
-		erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req));
-	    <<"HEAD">> ->
-		erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req));
-	    _ ->
-		{error, method_not_allowed}
-	end,
-    {cowboy_rest, cors(<<"GET, DELETE, POST, OPTIONS, HEAD">>, Req), S}.
+    {S, Req1} = case cowboy_req:method(Req) of
+		    <<"GET">> ->
+			{erocci_store:capabilities(Creds, Filter), Req};
+		    <<"DELETE">> ->
+			parse(Req, fun (Obj) -> erocci_store:delete_mixin(Obj, Creds) end);
+		    <<"POST">> ->
+			parse(Req, fun(Obj) -> erocci_store:new_mixin(Obj, Creds) end);
+		    <<"OPTIONS">> ->
+			{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
+		    <<"HEAD">> ->
+			{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
+		    _ ->
+			{{error, method_not_allowed}, Req}
+		end,
+    {cowboy_rest, cors(<<"GET, DELETE, POST, OPTIONS, HEAD">>, Req1), S}.
 
 
 init_bounded_collection(Category, Creds, Filter, Req) ->
-    S = case {occi_category:class(Category), cowboy_req:method(Req)} of
-	    {_, <<"GET">>} ->
-		case parse_range(Req) of
-		    {ok, Start, Number} ->
-			erocci_store:collection(Category, Creds, Filter, Start, Number);
-		    {error, _}=Err ->
-			Err
-		end;
-	    {kind, <<"DELETE">>} ->
-		erocci_store:delete_all(Category, Creds);
-	    {mixin, <<"DELETE">>} ->
-		parse(Req, fun (Obj) -> erocci_store:remove_mixin(Category, Obj, Creds) end);
-	    {kind, <<"POST">>} ->
-		case cowboy_req:match_qs([action], Req) of
-		    #{ action := Action } ->
-			parse(Req, fun (Obj) -> 
-					   erocci_store:action(Category, Action, Obj, Creds) 
-				   end);
+    {S, Req1} = case {occi_category:class(Category), cowboy_req:method(Req)} of
+		    {_, <<"GET">>} ->
+			case parse_range(Req) of
+			    {ok, Start, Number} ->
+				{erocci_store:collection(Category, Creds, Filter, Start, Number), Req};
+			    {error, _}=Err ->
+				{Err, Req}
+			end;
+		    {kind, <<"DELETE">>} ->
+			{erocci_store:delete_all(Category, Creds), Req};
+		    {mixin, <<"DELETE">>} ->
+			parse(Req, fun (Obj) -> erocci_store:remove_mixin(Category, Obj, Creds) end);
+		    {kind, <<"POST">>} ->
+			case cowboy_req:match_qs([action], Req) of
+			    #{ action := Action } ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:action(Category, Action, Obj, Creds)
+					   end);
+			    _ ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:create(Category, Obj, Creds)
+					   end)
+			end;
+		    {mixin, <<"POST">>} ->
+			case cowboy_req:match_qs([action], Req) of
+			    #{ action := Action } ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:action(Category, Action, Obj, Creds) 
+					   end);
+			    _ ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:append_mixin(Category, Obj, Creds)
+					   end)
+			end;
+		    {mixin, <<"PUT">>} ->
+			parse(Req, fun(Obj) -> erocci_store:set_mixin(Category, Obj, Creds) end);
+		    {_, <<"OPTIONS">>} ->
+			{erocci_store:collection(Category, Creds, Filter, 0, 0), Req};
+		    {_, <<"HEAD">>} ->
+			{erocci_store:collection(Category, Creds, Filter, 0, 0), Req};
 		    _ ->
-			parse(Req, fun (Obj) -> 
-					   erocci_store:create(Category, Obj, Creds)
-				   end)
-		end;
-	    {mixin, <<"POST">>} ->
-		case cowboy_req:match_qs([action], Req) of
-		    #{ action := Action } ->
-			parse(Req, fun (Obj) -> 
-					   erocci_store:action(Category, Action, Obj, Creds) 
-				   end);
-		    _ ->
-			parse(Req, fun (Obj) -> 
-					   erocci_store:append_mixin(Category, Obj, Creds)
-				   end)
-		end;
-	    {mixin, <<"PUT">>} ->
-		parse(Req, fun(Obj) -> erocci_store:set_mixin(Category, Obj, Creds) end);
-	    {_, <<"OPTIONS">>} ->
-		erocci_store:collection(Category, Creds, Filter, 0, 0);
-	    {_, <<"HEAD">>} ->
-		erocci_store:collection(Category, Creds, Filter, 0, 0);
-	    _ ->
-		{error, method_not_allowed}
-	end,
+			{{error, method_not_allowed}, Req}
+		end,
     Allows = case occi_category:class(Category) of
 		 kind -> <<"GET, DELETE, POST, OPTIONS, HEAD">>;
 		 mixin -> <<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>
 	     end,
-    {cowboy_rest, cors(Allows, Req), S}.
+    {cowboy_rest, cors(Allows, Req1), S}.
 
 
 init_node(Path, Creds, Filter, Req) ->
-    S = case cowboy_req:method(Req) of
-	    <<"GET">> ->
-		case parse_range(Req) of
-		    {ok, Start, Number} ->
-			erocci_store:get(Path, Creds, Filter, Start, Number);
-		    {error, _}=Err ->
-			Err
-		end;
-	    <<"DELETE">> ->
-		erocci_store:delete(Path, Creds);
-	    <<"POST">> ->
-		case cowboy_req:match_qs([action], Req) of
-		    #{ action := Action } ->
-			parse(Req, fun (Obj) -> 
-					   erocci_store:action(Path, Action, Obj, Creds) 
-				   end);
+    {S, Req1} = case cowboy_req:method(Req) of
+		    <<"GET">> ->
+			case parse_range(Req) of
+			    {ok, Start, Number} ->
+				{erocci_store:get(Path, Creds, Filter, Start, Number), Req};
+			    {error, _}=Err ->
+				Err
+			end;
+		    <<"DELETE">> ->
+			{erocci_store:delete(Path, Creds), Req};
+		    <<"POST">> ->
+			case cowboy_req:match_qs([action], Req) of
+			    #{ action := Action } ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:action(Path, Action, Obj, Creds) 
+					   end);
+			    _ ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:update(Path, Obj, Creds) 
+					   end)
+			end;
+		    <<"PUT">> ->
+			parse(Req, fun (Obj) -> erocci_store:create(Path, Obj, Creds) end);
+		    <<"OPTIONS">> ->
+			{erocci_store:get(Path, Creds, Filter), Req};
+		    <<"HEAD">> ->
+			{erocci_store:get(Path, Creds, Filter), Req};
 		    _ ->
-			parse(Req, fun (Obj) -> 
-					   erocci_store:update(Path, Obj, Creds) 
-				   end)
-		end;
-	    <<"PUT">> ->
-		parse(Req, fun (Obj) -> erocci_store:create(Path, Obj, Creds) end);
-	    <<"OPTIONS">> ->
-		erocci_store:get(Path, Creds, Filter);
-	    <<"HEAD">> ->
-		erocci_store:get(Path, Creds, Filter);
-	    _ ->
-		{error, method_not_allowed}
-	end,
-    {cowboy_rest, cors(<<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>, Req), S}.
+			{{error, method_not_allowed}, Req}
+		end,
+    {cowboy_rest, cors(<<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>, Req1), S}.
 
 
+-define(body_opts, [
+		    {length, 64000},
+		    {read_length, 64000},
+		    {read_timeout, 5000}
+		   ]).
 parse(Req, Next) ->
-    Next({cowboy_req:header(<<"content-type">>, Req), cowboy_req:body(Req)}).
+    case cowboy_req:body(Req, ?body_opts) of
+	{ok, Body, Req1} ->
+	    {Next({cowboy_req:header(<<"content-type">>, Req1), Body}), Req1};
+	{more, _, Req1} ->
+	    {{error, badlength}, Req1}
+    end.
 
 
 credentials(Req) ->

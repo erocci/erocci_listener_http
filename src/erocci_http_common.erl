@@ -18,14 +18,14 @@
 -include("erocci_http.hrl").
 -include_lib("kernel/include/inet.hrl").
 
-%% API
--export([start/3,
+% API
+-export([start/1,
 		 stop/1]).
 
 
 %% @doc Start an HTTP listener
 %% @end
-start(Ref, Protocol, Opts) ->
+start(StartFun) ->
     {ok, _} = application:ensure_all_started(erocci_listener_http),
     Trails = trails:trails([erocci_http_handler,
 			    cowboy_swagger_handler]),
@@ -36,7 +36,7 @@ start(Ref, Protocol, Opts) ->
 		  {compress, true}
 		 ],
     Pool = application:get_env(erocci_listener_http, pool, 10),
-    cowboy:Protocol(Ref, Pool, Opts, CowboyOpts).
+    StartFun(Pool, CowboyOpts).
 
 
 stop(Ref) ->

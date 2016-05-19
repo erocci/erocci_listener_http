@@ -25,7 +25,10 @@
 
 start_link(Ref, Opts) ->
     ?info("Starting HTTPS listener~n", []),
-    erocci_http_common:start(Ref, start_https, validate_cfg(Opts)).
+    erocci_http_common:start(fun (Pool, CowboyOpts) ->
+				     cowboy:start_https(Ref, Pool, validate_cfg(Opts), CowboyOpts)
+			     end).
+
 
 terminate(Ref, _Reason) ->
     erocci_http_common:stop(Ref).
@@ -48,4 +51,4 @@ validate_cfg(Opts) ->
         true -> ok;
         false -> throw({missing_opt, keyfile}) 
     end,
-    [{ip, Address}, {port, Port}, {scheme, https} | Opts].
+    [{ip, Address}, {port, Port} | Opts].

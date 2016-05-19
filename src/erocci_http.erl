@@ -25,7 +25,10 @@
 
 start_link(Ref, Opts) ->
     ?info("Starting HTTP listener~n", []),
-    erocci_http_common:start(Ref, start_http, validate_cfg(Opts)).
+    erocci_http_common:start(fun (Pool, CowboyOpts) ->
+				     cowboy:start_http(Ref, Pool, validate_cfg(Opts), CowboyOpts)
+			     end).
+
 
 terminate(Ref, _Reason) ->
     erocci_http_common:stop(Ref).
@@ -36,4 +39,4 @@ terminate(Ref, _Reason) ->
 validate_cfg(Opts) ->
     Address = proplists:get_value(ip, Opts, {0,0,0,0}),
     Port = proplists:get_value(port, Opts, 8080),
-    [{ip, Address}, {port, Port}, {scheme, http} | Opts].
+    [{ip, Address}, {port, Port} | Opts].
