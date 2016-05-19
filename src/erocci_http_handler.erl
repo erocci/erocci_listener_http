@@ -129,6 +129,9 @@ is_conflict(Req, S) ->
 malformed_request(Req, {error, {parse_error, _}=Err}=S) ->
     {true, errors(Err, Req), S};
 
+malformed_request(Req, {error, {badkey, _}=Err}=S) ->
+    {true, errors(Err, Req), S};
+
 malformed_request(Req, S) ->
     {false, Req, S}.
 
@@ -261,23 +264,23 @@ init_bounded_collection(Category, Creds, Filter, Req) ->
 		    {mixin, <<"DELETE">>} ->
 			parse(Req, fun (Obj) -> erocci_store:remove_mixin(Category, Obj, Creds) end);
 		    {kind, <<"POST">>} ->
-			case cowboy_req:match_qs([action], Req) of
+			try cowboy_req:match_qs([action], Req) of
 			    #{ action := Action } ->
 				parse(Req, fun (Obj) -> 
 						   erocci_store:action(Category, Action, Obj, Creds)
-					   end);
-			    _ ->
+					   end)
+			catch error:{badmatch, false} ->
 				parse(Req, fun (Obj) -> 
 						   erocci_store:create(Category, Obj, Creds)
 					   end)
 			end;
 		    {mixin, <<"POST">>} ->
-			case cowboy_req:match_qs([action], Req) of
+			try cowboy_req:match_qs([action], Req) of
 			    #{ action := Action } ->
 				parse(Req, fun (Obj) -> 
 						   erocci_store:action(Category, Action, Obj, Creds) 
-					   end);
-			    _ ->
+					   end)
+			catch error:{badmatch, false} ->
 				parse(Req, fun (Obj) -> 
 						   erocci_store:append_mixin(Category, Obj, Creds)
 					   end)
@@ -310,12 +313,12 @@ init_node(Path, Creds, Filter, Req) ->
 		    <<"DELETE">> ->
 			{erocci_store:delete(Path, Creds), Req};
 		    <<"POST">> ->
-			case cowboy_req:match_qs([action], Req) of
+			try cowboy_req:match_qs([action], Req) of
 			    #{ action := Action } ->
 				parse(Req, fun (Obj) -> 
 						   erocci_store:action(Path, Action, Obj, Creds) 
-					   end);
-			    _ ->
+					   end)
+			catch error:{badmatch, false} ->
 				parse(Req, fun (Obj) -> 
 						   erocci_store:update(Path, Obj, Creds) 
 					   end)
@@ -422,7 +425,9 @@ parse_range(Req) ->
 	#{ page := Page, number := Number } ->
 	    {ok, (Page-1) * Number, Number}
     catch error:{case_clause, _} ->
-	    {error, {parse_error, range}}
+	    {error, {parse_error, range}};
+	  error:{badmatch, false} ->
+	    {ok, 0, 0}
     end.
 
 
