@@ -31,33 +31,20 @@
 
 
 %% trails
--behaviour(trails_handler).
--export([trails/0]).
+-export([trails_query/0,
+	 trails_collections/0,
+	 trails_all/0]).
 
 
 %% Callback callbacks
 -export([to/2, from/2]).
 
 
-init(Req, _Opts) -> 
+init(Req, Type) -> 
     Creds = credentials(Req),
     Filter = parse_filters(cowboy_req:parse_qs(Req)),
     Req2 = cowboy_req:set_resp_header(<<"server">>, ?SERVER_ID, Req),
-    case cowboy_req:path(Req2) of
-	<<"/-/">> ->
-	    init_capabilities(Creds, Filter , Req2);
-	<<"/.well-known/org/ogf/occi/-/">> ->
-	    init_capabilities(Creds, Filter, Req2);
-	Path ->
-	    Collections = erocci_store:collections(),
-	    Path2 = occi_utils:normalize(Path),
-	    case maps:is_key(Path2, Collections) of
-		true ->
-		    init_bounded_collection(maps:get(Path2, Collections), Creds, Filter, Req);
-		false ->
-		    init_node(Path2, Creds, Filter, Req2)
-	    end
-    end.
+    init2(Req2, Type, Creds, Filter).
 
 
 -define(ALL_METHODS, [<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>]).
@@ -154,9 +141,10 @@ to(Req, {ok, Obj, _Serial}) ->
     {[Body, "\n"], Req, {ok, Obj}}.
 
 
-from(Req, {ok, Obj, _Serial}=S) ->
+from(Req, {ok, Obj}=S) ->
     Mimetype = cowboy_req:header(<<"accept">>, Req),
-    Body = occi_rendering:render(Mimetype, Obj),
+    Ctx = occi_uri:from_string(cowboy_req:url(Req)),
+    Body = occi_rendering:render(Mimetype, Obj, Ctx),
     {true, cowboy_req:set_resp_body([Body, "\n"], Req), S};
 
 from(Req, {error, Err}=S) ->
@@ -167,28 +155,38 @@ from(Req, {error, Err}=S) ->
 %% @end
 -define(trails_mimetypes, [<<"text/plain">>, <<"text/occi">>, <<"application/occi+json">>, 
 			   <<"application/json">>, <<"applicaton/occi+xml">>, <<"applicaton/xml">>]).
-trails() ->
-    Query = trails:trail(<<"/-/">>, ?MODULE, [],
-			 #{get =>
-			       #{ tags => [<<"Query Interface">>],
-				  description => <<"Retrieve Category instances">>,
-				  consumes => [],
-				  produces => [ <<"text/uri-list">> | ?trails_mimetypes ]
-				},
-			   post =>
-			       #{ tags => [<<"Query Interface">>],
-				  description => <<"Add a user-defined Mixin instance">>,
-				  consumes => ?trails_mimetypes,
-				  produces => []},
-			   delete =>
-			       #{ tags => [<<"Query Interface">>],
-				  description => <<"Remove a user-defined Mixin instance">>,
-				  consumes => ?trails_mimetypes,
-				  produces => []}
-			  }),
+trails_query() ->
+    QueryShort = trails:trail(<<"/-/">>, ?MODULE, query,
+			      #{get =>
+				    #{ tags => [<<"Query Interface">>],
+				       description => <<"Retrieve Category instances">>,
+				       consumes => [],
+				       produces => [ <<"text/uri-list">> | ?trails_mimetypes ]
+				     },
+				post =>
+				    #{ tags => [<<"Query Interface">>],
+				       description => <<"Add a user-defined Mixin instance">>,
+				       consumes => ?trails_mimetypes,
+				       produces => []},
+				delete =>
+				    #{ tags => [<<"Query Interface">>],
+				       description => <<"Remove a user-defined Mixin instance">>,
+				       consumes => ?trails_mimetypes,
+				       produces => []}
+			       }),
+    QueryNorm = trails:trail(<<"/.well-known/org/ogf/occi/-">>, ?MODULE, query, #{}),
+    [ QueryShort, QueryNorm ].
+
+
+trails_collections() ->
     maps:fold(fun (Location, Category, Acc) ->
-		  category_metadata(occi_category:class(Category), Location, Category, Acc)
-	      end, [ Query ], erocci_store:collections()).
+		      category_metadata(occi_category:class(Category), Location, Category, Acc)
+	      end, [], erocci_store:collections()).
+
+
+trails_all() ->
+    trails:trail('_', ?MODULE, [], #{}).
+
 
 %% @doc Return trail definitions
 %% @end
@@ -232,6 +230,19 @@ trails_all(Opts) ->
 %%%
 %%% Private
 %%%
+init2(Req, query, Creds, Filter) ->
+    init_capabilities(Creds, Filter , Req);
+
+init2(Req, {kind, Kind}, Creds, Filter) ->
+    init_kind_collection(Kind, Creds, Filter, Req);
+
+init2(Req, {mixin, Mixin}, Creds, Filter) ->
+    init_mixin_collection(Mixin, Creds, Filter, Req);
+    
+init2(Req, undefined, Creds, Filter) ->
+    init_node(Creds, Filter, Req).
+
+
 init_capabilities(Creds, Filter, Req) ->
     {S, Req1} = case cowboy_req:method(Req) of
 		    <<"GET">> ->
@@ -239,7 +250,9 @@ init_capabilities(Creds, Filter, Req) ->
 		    <<"DELETE">> ->
 			parse(Req, fun (Obj) -> erocci_store:delete_mixin(Obj, Creds) end);
 		    <<"POST">> ->
-			parse(Req, fun(Obj) -> erocci_store:new_mixin(Obj, Creds) end);
+			parse(Req, fun(Obj) -> 
+					   erocci_store:new_mixin(Obj, Creds)
+				   end);
 		    <<"OPTIONS">> ->
 			{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
 		    <<"HEAD">> ->
@@ -250,58 +263,76 @@ init_capabilities(Creds, Filter, Req) ->
     {cowboy_rest, cors(<<"GET, DELETE, POST, OPTIONS, HEAD">>, Req1), S}.
 
 
-init_bounded_collection(Category, Creds, Filter, Req) ->
-    {S, Req1} = case {occi_category:class(Category), cowboy_req:method(Req)} of
-		    {_, <<"GET">>} ->
+init_kind_collection(Kind, Creds, Filter, Req) ->
+    {S, Req1} = case cowboy_req:method(Req) of
+		    <<"GET">> ->
 			case parse_range(Req) of
 			    {ok, Start, Number} ->
-				{erocci_store:collection(Category, Creds, Filter, Start, Number), Req};
+				{erocci_store:collection(Kind, Creds, Filter, Start, Number), Req};
 			    {error, _}=Err ->
 				{Err, Req}
 			end;
-		    {kind, <<"DELETE">>} ->
-			{erocci_store:delete_all(Category, Creds), Req};
-		    {mixin, <<"DELETE">>} ->
-			parse(Req, fun (Obj) -> erocci_store:remove_mixin(Category, Obj, Creds) end);
-		    {kind, <<"POST">>} ->
+		    <<"DELETE">> ->
+			{erocci_store:delete_all(Kind, Creds), Req};
+		    <<"POST">> ->
 			try cowboy_req:match_qs([action], Req) of
 			    #{ action := Action } ->
 				parse(Req, fun (Obj) -> 
-						   erocci_store:action(Category, Action, Obj, Creds)
+						   erocci_store:action(Kind, Action, Obj, Creds)
 					   end)
 			catch error:{badmatch, false} ->
 				parse(Req, fun (Obj) -> 
-						   erocci_store:create(Category, Obj, Creds)
+						   erocci_store:create(Kind, Obj, Creds)
 					   end)
 			end;
-		    {mixin, <<"POST">>} ->
-			try cowboy_req:match_qs([action], Req) of
-			    #{ action := Action } ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:action(Category, Action, Obj, Creds) 
-					   end)
-			catch error:{badmatch, false} ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:append_mixin(Category, Obj, Creds)
-					   end)
-			end;
-		    {mixin, <<"PUT">>} ->
-			parse(Req, fun(Obj) -> erocci_store:set_mixin(Category, Obj, Creds) end);
-		    {_, <<"OPTIONS">>} ->
-			{erocci_store:collection(Category, Creds, Filter, 0, 0), Req};
-		    {_, <<"HEAD">>} ->
-			{erocci_store:collection(Category, Creds, Filter, 0, 0), Req};
+		    <<"OPTIONS">> ->
+			{erocci_store:collection(Kind, Creds, Filter, 0, 0), Req};
+		    <<"HEAD">> ->
+			{erocci_store:collection(Kind, Creds, Filter, 0, 0), Req};
 		    _ ->
 			{{error, method_not_allowed}, Req}
 		end,
-    Allows = case occi_category:class(Category) of
-		 kind -> <<"GET, DELETE, POST, OPTIONS, HEAD">>;
-		 mixin -> <<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>
-	     end,
+    Allows = <<"GET, DELETE, POST, OPTIONS, HEAD">>,
     {cowboy_rest, cors(Allows, Req1), S}.
 
 
-init_node(Path, Creds, Filter, Req) ->
+init_mixin_collection(Mixin, Creds, Filter, Req) ->
+    {S, Req1} = case cowboy_req:method(Req) of
+		    <<"GET">> ->
+			case parse_range(Req) of
+			    {ok, Start, Number} ->
+				{erocci_store:collection(Mixin, Creds, Filter, Start, Number), Req};
+			    {error, _}=Err ->
+				{Err, Req}
+			end;
+		    <<"DELETE">> ->
+			parse(Req, fun (Obj) -> erocci_store:remove_mixin(Mixin, Obj, Creds) end);
+		    <<"POST">> ->
+			try cowboy_req:match_qs([action], Req) of
+			    #{ action := Action } ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:action(Mixin, Action, Obj, Creds) 
+					   end)
+			catch error:{badmatch, false} ->
+				parse(Req, fun (Obj) -> 
+						   erocci_store:append_mixin(Mixin, Obj, Creds)
+					   end)
+			end;
+		    <<"PUT">> ->
+			parse(Req, fun(Obj) -> erocci_store:set_mixin(Mixin, Obj, Creds) end);
+		    <<"OPTIONS">> ->
+			{erocci_store:collection(Mixin, Creds, Filter, 0, 0), Req};
+		    <<"HEAD">> ->
+			{erocci_store:collection(Mixin, Creds, Filter, 0, 0), Req};
+		    _ ->
+			{{error, method_not_allowed}, Req}
+		end,
+    Allows = <<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>,
+    {cowboy_rest, cors(Allows, Req1), S}.
+
+
+init_node(Creds, Filter, Req) ->
+    Path = occi_utils:normalize(cowboy_req:path(Req)),
     {S, Req1} = case cowboy_req:method(Req) of
 		    <<"GET">> ->
 			case parse_range(Req) of
@@ -431,6 +462,18 @@ parse_range(Req) ->
     end.
 
 
+-define(EXPOSE_HEADERS, <<"server,category,link,x-occi-attribute,x-occi-location,location">>).
+cors(Methods, Req) ->
+    case cowboy_req:header(<<"origin">>, Req) of
+	undefined -> 
+	    Req;
+	Origin ->
+	    Req1 = cowboy_req:set_resp_header(<<"access-control-allow-methods">>, Methods, Req),
+	    Req2 = cowboy_req:set_resp_header(<<"access-control-allow-origin">>, Origin, Req1),
+	    cowboy_req:set_resp_header(<<"access-control-expose-headers">>, ?EXPOSE_HEADERS, Req2)
+    end.
+
+
 category_metadata(kind, Location, C, Acc) ->
     {Scheme, Term} = occi_category:id(C),
     Name = iolist_to_binary(io_lib:format("~s~s", [Scheme, Term])),
@@ -458,7 +501,7 @@ category_metadata(kind, Location, C, Acc) ->
 			  io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
 		    consumes => [],
 		    produces => []}},
-    [ trails:trail(Location, ?MODULE, [], Map) | Acc ];
+    [ trails:trail(Location, ?MODULE, {kind, C}, Map) | Acc ];
 
 category_metadata(mixin, Location, C, Acc) ->
     {Scheme, Term} = occi_category:id(C),
@@ -496,16 +539,4 @@ category_metadata(mixin, Location, C, Acc) ->
 					[Name, Title])),
 		    consumes => [],
 		    produces => []}},
-    [ trails:trail(Location, ?MODULE, [], Map) | Acc ].
-
-
--define(EXPOSE_HEADERS, <<"server,category,link,x-occi-attribute,x-occi-location,location">>).
-cors(Methods, Req) ->
-    case cowboy_req:header(<<"origin">>, Req) of
-	undefined -> 
-	    Req;
-	Origin ->
-	    Req1 = cowboy_req:set_resp_header(<<"access-control-allow-methods">>, Methods, Req),
-	    Req2 = cowboy_req:set_resp_header(<<"access-control-allow-origin">>, Origin, Req1),
-	    cowboy_req:set_resp_header(<<"access-control-expose-headers">>, ?EXPOSE_HEADERS, Req2)
-    end.
+    [ trails:trail(Location, ?MODULE, {mixin, C}, Map) | Acc ].
