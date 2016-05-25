@@ -39,8 +39,9 @@
          from_xml/2]).
 
 %% Trails
--behaviour(trails_handler).
--export([trails/0]).
+-export([trails_query/1,
+		 trails_collections/1,
+		 trails_all/1]).
 
 -record(state, {op      :: atom(), 
                 node, 
@@ -208,33 +209,41 @@ from_xml(Req, State) ->
 %% @doc Return trail definitions
 %% @end
 -define(trails_mimetypes, ["text/plain", "text/occi", "application/occi+json", 
-			   "application/json", "applicaton/occi+xml", "applicaton/xml"]).
-trails() ->
-    Query = trails:trail("/-/", ?MODULE, [],
-			 #{get =>
-			       #{ tags => [<<"Query Interface">>],
-					  description => <<"Retrieve Category instances">>,
-					  consumes => [],
-					  produces => [ "text/uri-list" | ?trails_mimetypes ]
-				},
-			   post =>
-			       #{ tags => [<<"Query Interface">>],
-					  description => <<"Add a user-defined Mixin instance">>,
-					  consumes => ?trails_mimetypes,
-					  produces => []},
-			   delete =>
-			       #{ tags => [<<"Query Interface">>],
-					  description => <<"Remove a user-defined Mixin instance">>,
-					  consumes => ?trails_mimetypes,
-					  produces => []}
-			  }),
+						   "application/json", "applicaton/occi+xml", "applicaton/xml"]).
+trails_query(Opts) ->
+    QueryShort = trails:trail(<<"/-/">>, ?MODULE, Opts,
+							  #{get =>
+									#{ tags => [<<"Query Interface">>],
+									   description => <<"Retrieve Category instances">>,
+									   consumes => [],
+									   produces => [ "text/uri-list" | ?trails_mimetypes ]
+									 },
+								post =>
+									#{ tags => [<<"Query Interface">>],
+									   description => <<"Add a user-defined Mixin instance">>,
+									   consumes => ?trails_mimetypes,
+									   produces => []},
+								delete =>
+									#{ tags => [<<"Query Interface">>],
+									   description => <<"Remove a user-defined Mixin instance">>,
+									   consumes => ?trails_mimetypes,
+									   produces => []}
+							   }),
+	QueryNorm = trails:trail(<<"/.well-known/org/ogf/occi/-">>, ?MODULE, Opts, #{}),
+	[ QueryShort, QueryNorm ].
+
+
+trails_collections(Opts) ->
 	{ Kinds, Mixins, _ } = occi_category_mgr:find_all(),
-	Query2 = lists:foldl(fun (Kind, Acc) ->
-	 							 [ kind_metadata(Kind) | Acc ]
-						 end, [Query], Kinds),
-	lists:foldl(fun (Mixin, Acc) ->
-	 					[ mixin_metadata(Mixin) | Acc ]
-	 			end, Query2, Mixins).
+	Trails = lists:foldl(fun (Kind, Acc) ->
+	 							 [ kind_metadata(Kind, Opts) | Acc ]
+						 end, [], Kinds),
+	lists:reverse(lists:foldl(fun (Mixin, Acc) ->
+									  [ mixin_metadata(Mixin, Opts) | Acc ]
+							  end, Trails, Mixins)).
+
+trails_all(Opts) ->
+	[ trails:trail('_', ?MODULE, Opts, #{}) ].
 
 %%%
 %%% Private
@@ -656,7 +665,7 @@ update_qs_val(Name, Value, Req) ->
     {occi_uri:new(Host, Path, lists:keystore(Name, 1, QsVals, {Name, Value})), Req2}.
 
 
-kind_metadata(Kind) ->
+kind_metadata(Kind, Opts) ->
 	Id = occi_kind:get_id(Kind),
     Name = iolist_to_binary(io_lib:format("~s~s", [Id#occi_cid.scheme, Id#occi_cid.term])),
 	Location = occi_kind:get_location(Kind),
@@ -682,10 +691,10 @@ kind_metadata(Kind) ->
 				iolist_to_binary(io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
 		    consumes => [],
 		    produces => []}},
-    trails:trail(occi_uri:to_binary(Location), ?MODULE, [], Map).
+    trails:trail(occi_uri:to_binary(Location), ?MODULE, Opts, Map).
 
 
-mixin_metadata(Mixin) ->
+mixin_metadata(Mixin, Opts) ->
 	Id = occi_mixin:get_id(Mixin),
     Name = iolist_to_binary(io_lib:format("~s~s", [Id#occi_cid.scheme, Id#occi_cid.term])),
 	Location = occi_mixin:get_location(Mixin),
@@ -719,4 +728,4 @@ mixin_metadata(Mixin) ->
 											   [Name, Title])),
 		    consumes => [],
 		    produces => []}},
-    trails:trail(occi_uri:to_binary(Location), ?MODULE, [], Map).
+    trails:trail(occi_uri:to_binary(Location), ?MODULE, Opts, Map).

@@ -1,19 +1,7 @@
-%%-*- mode: erlang -*-
-{application, erocci_listener_http,
- [
-  {description, "erocci HTTP listener"},
-  {modules, []},
-  {vsn, "git"},
-  {applications, 
-   [
-    kernel,
-    stdlib,
-    cowboy,
-	trails,
-	cowboy_swagger,
-    erocci_authnz,
-	erocci_backend_mnesia
-   ]
-  },
-  {registered, []}
- ]}.
+{application,erocci_listener_http,
+             [{description,"erocci HTTP listener"},
+              {modules,[]},
+              {vsn,"git"},
+              {applications,[kernel,stdlib,cowboy,trails,cowboy_swagger,
+                             erocci_authnz,erocci_backend_mnesia]},
+              {registered,[]}]}.

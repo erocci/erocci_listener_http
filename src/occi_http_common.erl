@@ -20,7 +20,7 @@
 -include_lib("erocci_core/include/occi_log.hrl").
 -include_lib("kernel/include/inet.hrl").
 
-												% API
+%% API
 -export([start/3,
 		 stop/1,
 		 set_cors/2,
@@ -34,27 +34,29 @@
 -define(ROUTE_OCCI(X),    {<<"/[...]">>,                       occi_http_handler,  X}).
 
 start(Ref, Protocol, Props) ->
-    application:ensure_all_started(cowboy),
-    application:ensure_all_started(occi_authnz),
-	Trails = trails:trails([occi_http_handler,
-							cowboy_swagger_handler]),
+    {ok, _} = application:ensure_all_started(erocci_listener_http),
+    HandlerOpts = case proplists:get_value(auth, Props) of
+					  undefined -> 
+						  [];
+					  {AuthMod, AuthOpts} ->
+						  case occi_authnz:start_link(AuthMod, AuthOpts) of
+							  {ok, Pid} ->
+								  [ {auth, Pid} ];
+							  ignore ->
+								  throw({error, invalid_authentication_backend});
+							  {error, Err} ->
+								  throw({error, Err})
+						  end
+				  end,
+	Trails = cowboy_swagger_handler:trails()
+		++ occi_http_handler:trails_query(HandlerOpts)
+		++ occi_http_handler:trails_collections(HandlerOpts)
+		++ occi_http_handler:trails_all(HandlerOpts),
 	trails:store(Trails),
     Pool = proplists:get_value(pool, Props, ?DEFAULT_POOL),
 	Dispatch = trails:single_host_compile(Trails),
 	CowboyOpts = [{env, [{dispatch, Dispatch}]}],
-    case proplists:get_value(auth, Props) of
-		undefined ->
-			cowboy:Protocol(Ref, Pool, Props, CowboyOpts);
-		{AuthMod, AuthOpts} ->
-			case occi_authnz:start_link(AuthMod, AuthOpts) of
-				{ok, Pid} ->
-					cowboy:Protocol(Ref, Pool, Props, [ {auth, Pid} | CowboyOpts]);
-				ignore ->
-					throw({error, invalid_authentication_backend});
-				{error, Err} ->
-					throw({error, Err})
-			end
-    end.
+	cowboy:Protocol(Ref, Pool, Props, CowboyOpts).
 
 
 stop(Ref) ->
