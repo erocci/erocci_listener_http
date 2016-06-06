@@ -59,8 +59,11 @@ allowed_methods(Req, S) ->
 generate_etag(Req, {error, _}=S) ->
     {undefined, Req, S};
 
+generate_etag(Req, {ok, _, undefined}=S) ->
+    {<<>>, Req, S};
+
 generate_etag(Req, {ok, _, Serial}=S) ->
-    {Serial, Req, S}.
+    {serial_to_etag(Serial), Req, S}.
 
 
 valid_entity_length(Req, {error, badlength}=S) ->
@@ -553,3 +556,10 @@ category_metadata(mixin, Location, C, Acc) ->
 to_url(Path, Req) ->
     Ctx = occi_uri:from_string(cowboy_req:url(Req)),
     occi_uri:to_string(Path, Ctx).
+
+
+serial_to_etag(<< $", _/binary >> =Serial) ->
+    Serial;
+
+serial_to_etag(Serial) when is_binary(Serial) ->
+    << $", Serial/binary, $" >>.
