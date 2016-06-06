@@ -59,9 +59,6 @@ allowed_methods(Req, S) ->
 generate_etag(Req, {error, _}=S) ->
     {undefined, Req, S};
 
-generate_etag(Req, {ok, _, undefined}=S) ->
-    {<<>>, Req, S};
-
 generate_etag(Req, {ok, _, Serial}=S) ->
     {serial_to_etag(Serial), Req, S}.
 
@@ -557,6 +554,9 @@ to_url(Path, Req) ->
     Ctx = occi_uri:from_string(cowboy_req:url(Req)),
     occi_uri:to_string(Path, Ctx).
 
+
+serial_to_etag(undefined) ->
+    undefined;
 
 serial_to_etag(<< $", _/binary >> =Serial) ->
     Serial;
