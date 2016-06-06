@@ -185,7 +185,7 @@ trails_collections() ->
 
 
 trails_all() ->
-    trails:trail('_', ?MODULE, [], #{}).
+    [ trails:trail('_', ?MODULE, undefined, #{}) ].
 
 
 %% @doc Return trail definitions

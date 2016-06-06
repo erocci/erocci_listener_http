@@ -27,11 +27,11 @@
 %% @end
 start(StartFun) ->
     {ok, _} = application:ensure_all_started(erocci_listener_http),
-	Trails = cowboy_swagger_handler:trails()
-		++ erocci_http_handler:trails_query()
-		++ erocci_http_handler:trails_collections()
-		++ [ {'_', cowboy_swagger_handler, undefined} ],
-	%%trails:store(Trails),
+    Trails = cowboy_swagger_handler:trails()
+	++ erocci_http_handler:trails_query()
+	++ erocci_http_handler:trails_collections()
+	++ erocci_http_handler:trails_all(),
+    trails:store(Trails),
     Dispatch = trails:single_host_compile(Trails),
     CowboyOpts = [
 		  {env, [{dispatch, Dispatch}]},
