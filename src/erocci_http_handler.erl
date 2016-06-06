@@ -12,6 +12,7 @@
 
 -module(erocci_http_handler).
 
+-include_lib("occi/include/occi_types.hrl").
 -include_lib("erocci_core/include/erocci.hrl").
 -include_lib("erocci_core/include/erocci_log.hrl").
 -include("erocci_http.hrl").
@@ -142,10 +143,17 @@ to(Req, {ok, Obj, _Serial}) ->
 
 
 from(Req, {ok, Obj}=S) ->
+    Req1 = if 
+	       ?is_entity(Obj) ->
+		   Location = to_url(occi_entity:location(Obj), Req),
+		   cowboy_req:set_resp_header(<<"location">>, Location, Req);
+	       true ->
+		   Req
+	   end,
     Mimetype = cowboy_req:header(<<"accept">>, Req),
     Ctx = occi_uri:from_string(cowboy_req:url(Req)),
     Body = occi_rendering:render(Mimetype, Obj, Ctx),
-    {true, cowboy_req:set_resp_body([Body, "\n"], Req), S};
+    {true, cowboy_req:set_resp_body([Body, "\n"], Req1), S};
 
 from(Req, {error, Err}=S) ->
     {false, errors(Err, Req), S}.
@@ -540,3 +548,8 @@ category_metadata(mixin, Location, C, Acc) ->
 		    consumes => [],
 		    produces => []}},
     [ trails:trail(Location, ?MODULE, {mixin, C}, Map) | Acc ].
+
+
+to_url(Path, Req) ->
+    Ctx = occi_uri:from_string(cowboy_req:url(Req)),
+    occi_uri:to_string(Path, Ctx).
