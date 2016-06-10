@@ -293,7 +293,7 @@ init_kind_collection(Kind, Creds, Filter, Req) ->
 					   end)
 			catch error:{badmatch, false} ->
 				parse(Req, fun (Obj) -> 
-						   erocci_store:create(Kind, Obj, Creds)
+						   erocci_store:create(Kind, Obj, cowboy_req:host_url(Req), Creds)
 					   end)
 			end;
 		    <<"OPTIONS">> ->
@@ -366,7 +366,7 @@ init_node(Creds, Filter, Req) ->
 					   end)
 			end;
 		    <<"PUT">> ->
-			parse(Req, fun (Obj) -> erocci_store:create(Path, Obj, Creds) end);
+			parse(Req, fun (Obj) -> erocci_store:create(Path, Obj, cowboy_req:host_url(Req), Creds) end);
 		    <<"OPTIONS">> ->
 			{erocci_store:get(Path, Creds, Filter), Req};
 		    <<"HEAD">> ->
