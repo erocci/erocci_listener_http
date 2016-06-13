@@ -199,45 +199,6 @@ trails_all() ->
     [ trails:trail('_', ?MODULE, undefined, #{}) ].
 
 
-%% @doc Return trail definitions
-%% @end
--define(trails_mimetypes, ["text/plain", "text/occi", "application/occi+json", 
-						   "application/json", "applicaton/occi+xml", "applicaton/xml"]).
-trails_query(Opts) ->
-    QueryShort = trails:trail(<<"/-/">>, ?MODULE, Opts,
-							  #{get =>
-									#{ tags => [<<"Query Interface">>],
-									   description => <<"Retrieve Category instances">>,
-									   consumes => [],
-									   produces => [ "text/uri-list" | ?trails_mimetypes ]
-									 },
-								post =>
-									#{ tags => [<<"Query Interface">>],
-									   description => <<"Add a user-defined Mixin instance">>,
-									   consumes => ?trails_mimetypes,
-									   produces => []},
-								delete =>
-									#{ tags => [<<"Query Interface">>],
-									   description => <<"Remove a user-defined Mixin instance">>,
-									   consumes => ?trails_mimetypes,
-									   produces => []}
-							   }),
-	QueryNorm = trails:trail(<<"/.well-known/org/ogf/occi/-">>, ?MODULE, Opts, #{}),
-	[ QueryShort, QueryNorm ].
-
-
-trails_collections(Opts) ->
-	{ Kinds, Mixins, _ } = occi_category_mgr:find_all(),
-	Trails = lists:foldl(fun (Kind, Acc) ->
-	 							 [ kind_metadata(Kind, Opts) | Acc ]
-						 end, [], Kinds),
-	lists:reverse(lists:foldl(fun (Mixin, Acc) ->
-									  [ mixin_metadata(Mixin, Opts) | Acc ]
-							  end, Trails, Mixins)).
-
-trails_all(Opts) ->
-	[ trails:trail('_', ?MODULE, Opts, #{}) ].
-
 %%%
 %%% Private
 %%%
