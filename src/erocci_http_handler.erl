@@ -212,6 +212,7 @@ trails_query() ->
 
 trails_collections() ->
     maps:fold(fun (Location, Category, Acc) ->
+					  ?debug("add collection trail: ~p", [Location]),
 					  category_metadata(occi_category:class(Category), Location, Category, Acc)
 			  end, [], erocci_store:collections()).
 
@@ -233,7 +234,20 @@ init2(Req, {mixin, Mixin}, Creds, Filter) ->
     init_mixin_collection(Mixin, Creds, Filter, Req);
 
 init2(Req, undefined, Creds, Filter) ->
-    init_node(Creds, Filter, Req).
+	Collections = erocci_store:collections(),
+    Path = occi_utils:normalize(cowboy_req:path(Req)),
+	case maps:get(Path, Collections, undefined) of
+		undefined ->
+			?debug("<undefined>init2: ~p", [Path]),
+			init_node(Path, Creds, Filter, Req);
+		Cat when ?is_mixin(Cat) ->
+			?debug("<mixin>init2: ~p", [Cat]),
+			init_mixin_collection(Cat, Creds, Filter, Req);
+		Cat when ?is_kind(Cat) ->
+			?debug("<kind>init2: ~p", [Cat]),
+			%% Should never be reached, intercepted by trails
+			init_kind_collection(Cat, Creds, Filter, Req)
+	end.
 
 
 init_capabilities(Creds, Filter, Req) ->
@@ -324,8 +338,7 @@ init_mixin_collection(Mixin, Creds, Filter, Req) ->
     {cowboy_rest, cors(Allows, Req1), S}.
 
 
-init_node(Creds, Filter, Req) ->
-    Path = occi_utils:normalize(cowboy_req:path(Req)),
+init_node(Path, Creds, Filter, Req) ->
     {S, Req1} = case cowboy_req:method(Req) of
 					<<"GET">> ->
 						case parse_range(Req) of
