@@ -20,21 +20,21 @@
 %% REST Callbacks
 -export([init/2, 
          allowed_methods/2,
-	 generate_etag/2,
+		 generate_etag/2,
          is_authorized/2,
          resource_exists/2,
          is_conflict/2,
-	 malformed_request/2,
+		 malformed_request/2,
          delete_resource/2,
-	 valid_entity_length/2,
+		 valid_entity_length/2,
          content_types_provided/2,
          content_types_accepted/2]).
 
 
 %% trails
 -export([trails_query/0,
-	 trails_collections/0,
-	 trails_all/0]).
+		 trails_collections/0,
+		 trails_all/0]).
 
 
 %% Callback callbacks
@@ -71,18 +71,18 @@ valid_entity_length(Req, S) ->
 
 
 -define(entity_content_type(M), [{{<<"text">>,            <<"plain">>,     []}, M},
-				 {{<<"text">>,            <<"occi">>,      []}, M},
-				 {{<<"application">>,     <<"json">>,      []}, M},
-				 {{<<"application">>,     <<"occi+json">>, []}, M},
-				 {{<<"application">>,     <<"xml">>,       []}, M},
-				 {{<<"application">>,     <<"occi+xml">>,  []}, M}]).
+								 {{<<"text">>,            <<"occi">>,      []}, M},
+								 {{<<"application">>,     <<"json">>,      []}, M},
+								 {{<<"application">>,     <<"occi+json">>, []}, M},
+								 {{<<"application">>,     <<"xml">>,       []}, M},
+								 {{<<"application">>,     <<"occi+xml">>,  []}, M}]).
 -define(content_type(M), ?entity_content_type(M) ++ [ {{<<"text">>,    <<"uri-list">>,  []}, M} ]).
 
 content_types_provided(Req, {ok, Obj, _Serial}=S) ->
     case occi_type:type(Obj) of
-	categories -> {?content_type(to), Req, S};
-	collection -> {?content_type(to), Req, S};
-	_ ->          {?entity_content_type(to), Req, S}
+		categories -> {?content_type(to), Req, S};
+		collection -> {?content_type(to), Req, S};
+		_ ->          {?entity_content_type(to), Req, S}
     end;
 
 content_types_provided(Req, S) ->
@@ -147,12 +147,12 @@ to(Req, {ok, Obj, _Serial}) ->
 
 from(Req, {ok, Obj}=S) ->
     Req1 = if 
-	       ?is_entity(Obj) ->
-		   Location = to_url(occi_entity:location(Obj), Req),
-		   cowboy_req:set_resp_header(<<"location">>, Location, Req);
-	       true ->
-		   Req
-	   end,
+			   ?is_entity(Obj) ->
+				   Location = to_url(occi_entity:location(Obj), Req),
+				   cowboy_req:set_resp_header(<<"location">>, Location, Req);
+			   true ->
+				   Req
+		   end,
     Mimetype = cowboy_req:header(<<"accept">>, Req),
     Ctx = occi_uri:from_string(cowboy_req:url(Req)),
     Body = occi_rendering:render(Mimetype, Obj, Ctx),
@@ -165,34 +165,34 @@ from(Req, {error, Err}=S) ->
 %% @doc Return trail definitions
 %% @end
 -define(trails_mimetypes, [<<"text/plain">>, <<"text/occi">>, <<"application/occi+json">>, 
-			   <<"application/json">>, <<"applicaton/occi+xml">>, <<"applicaton/xml">>]).
+						   <<"application/json">>, <<"applicaton/occi+xml">>, <<"applicaton/xml">>]).
 trails_query() ->
     QueryShort = trails:trail(<<"/-/">>, ?MODULE, query,
-			      #{get =>
-				    #{ tags => [<<"Query Interface">>],
-				       description => <<"Retrieve Category instances">>,
-				       consumes => [],
-				       produces => [ <<"text/uri-list">> | ?trails_mimetypes ]
-				     },
-				post =>
-				    #{ tags => [<<"Query Interface">>],
-				       description => <<"Add a user-defined Mixin instance">>,
-				       consumes => ?trails_mimetypes,
-				       produces => []},
-				delete =>
-				    #{ tags => [<<"Query Interface">>],
-				       description => <<"Remove a user-defined Mixin instance">>,
-				       consumes => ?trails_mimetypes,
-				       produces => []}
-			       }),
+							  #{get =>
+									#{ tags => [<<"Query Interface">>],
+									   description => <<"Retrieve Category instances">>,
+									   consumes => [],
+									   produces => [ <<"text/uri-list">> | ?trails_mimetypes ]
+									 },
+								post =>
+									#{ tags => [<<"Query Interface">>],
+									   description => <<"Add a user-defined Mixin instance">>,
+									   consumes => ?trails_mimetypes,
+									   produces => []},
+								delete =>
+									#{ tags => [<<"Query Interface">>],
+									   description => <<"Remove a user-defined Mixin instance">>,
+									   consumes => ?trails_mimetypes,
+									   produces => []}
+							   }),
     QueryNorm = trails:trail(<<"/.well-known/org/ogf/occi/-">>, ?MODULE, query, #{}),
     [ QueryShort, QueryNorm ].
 
 
 trails_collections() ->
     maps:fold(fun (Location, Category, Acc) ->
-		      category_metadata(occi_category:class(Category), Location, Category, Acc)
-	      end, [], erocci_store:collections()).
+					  category_metadata(occi_category:class(Category), Location, Category, Acc)
+			  end, [], erocci_store:collections()).
 
 
 trails_all() ->
@@ -210,95 +210,95 @@ init2(Req, {kind, Kind}, Creds, Filter) ->
 
 init2(Req, {mixin, Mixin}, Creds, Filter) ->
     init_mixin_collection(Mixin, Creds, Filter, Req);
-    
+
 init2(Req, undefined, Creds, Filter) ->
     init_node(Creds, Filter, Req).
 
 
 init_capabilities(Creds, Filter, Req) ->
     {S, Req1} = case cowboy_req:method(Req) of
-		    <<"GET">> ->
-			{erocci_store:capabilities(Creds, Filter), Req};
-		    <<"DELETE">> ->
-			parse(Req, fun (Obj) -> erocci_store:delete_mixin(Obj, Creds) end);
-		    <<"POST">> ->
-			parse(Req, fun(Obj) -> 
-					   erocci_store:new_mixin(Obj, Creds)
-				   end);
-		    <<"OPTIONS">> ->
-			{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
-		    <<"HEAD">> ->
-			{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
-		    _ ->
-			{{error, method_not_allowed}, Req}
-		end,
+					<<"GET">> ->
+						{erocci_store:capabilities(Creds, Filter), Req};
+					<<"DELETE">> ->
+						parse(Req, fun (Obj) -> erocci_store:delete_mixin(Obj, Creds) end);
+					<<"POST">> ->
+						parse(Req, fun(Obj) -> 
+										   erocci_store:new_mixin(Obj, Creds)
+								   end);
+					<<"OPTIONS">> ->
+						{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
+					<<"HEAD">> ->
+						{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
+					_ ->
+						{{error, method_not_allowed}, Req}
+				end,
     {cowboy_rest, cors(<<"GET, DELETE, POST, OPTIONS, HEAD">>, Req1), S}.
 
 
 init_kind_collection(Kind, Creds, Filter, Req) ->
     {S, Req1} = case cowboy_req:method(Req) of
-		    <<"GET">> ->
-			case parse_range(Req) of
-			    {ok, Start, Number} ->
-				{erocci_store:collection(Kind, Creds, Filter, Start, Number), Req};
-			    {error, _}=Err ->
-				{Err, Req}
-			end;
-		    <<"DELETE">> ->
-			{erocci_store:delete_all(Kind, Creds), Req};
-		    <<"POST">> ->
-			try cowboy_req:match_qs([action], Req) of
-			    #{ action := Action } ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:action(Kind, Action, Obj, Creds)
-					   end)
-			catch error:{badmatch, false} ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:create(Kind, Obj, cowboy_req:host_url(Req), Creds)
-					   end)
-			end;
-		    <<"OPTIONS">> ->
-			{erocci_store:collection(Kind, Creds, Filter, 0, 0), Req};
-		    <<"HEAD">> ->
-			{erocci_store:collection(Kind, Creds, Filter, 0, 0), Req};
-		    _ ->
-			{{error, method_not_allowed}, Req}
-		end,
+					<<"GET">> ->
+						case parse_range(Req) of
+							{ok, Start, Number} ->
+								{erocci_store:collection(Kind, Creds, Filter, Start, Number), Req};
+							{error, _}=Err ->
+								{Err, Req}
+						end;
+					<<"DELETE">> ->
+						{erocci_store:delete_all(Kind, Creds), Req};
+					<<"POST">> ->
+						try cowboy_req:match_qs([action], Req) of
+							#{ action := Action } ->
+								parse(Req, fun (Obj) -> 
+												   erocci_store:action(Kind, Action, Obj, Creds)
+										   end)
+						catch error:{badmatch, false} ->
+								parse(Req, fun (Obj) -> 
+												   erocci_store:create(Kind, Obj, cowboy_req:host_url(Req), Creds)
+										   end)
+						end;
+					<<"OPTIONS">> ->
+						{erocci_store:collection(Kind, Creds, Filter, 0, 0), Req};
+					<<"HEAD">> ->
+						{erocci_store:collection(Kind, Creds, Filter, 0, 0), Req};
+					_ ->
+						{{error, method_not_allowed}, Req}
+				end,
     Allows = <<"GET, DELETE, POST, OPTIONS, HEAD">>,
     {cowboy_rest, cors(Allows, Req1), S}.
 
 
 init_mixin_collection(Mixin, Creds, Filter, Req) ->
     {S, Req1} = case cowboy_req:method(Req) of
-		    <<"GET">> ->
-			case parse_range(Req) of
-			    {ok, Start, Number} ->
-				{erocci_store:collection(Mixin, Creds, Filter, Start, Number), Req};
-			    {error, _}=Err ->
-				{Err, Req}
-			end;
-		    <<"DELETE">> ->
-			parse(Req, fun (Obj) -> erocci_store:remove_mixin(Mixin, Obj, Creds) end);
-		    <<"POST">> ->
-			try cowboy_req:match_qs([action], Req) of
-			    #{ action := Action } ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:action(Mixin, Action, Obj, Creds) 
-					   end)
-			catch error:{badmatch, false} ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:append_mixin(Mixin, Obj, Creds)
-					   end)
-			end;
-		    <<"PUT">> ->
-			parse(Req, fun(Obj) -> erocci_store:set_mixin(Mixin, Obj, Creds) end);
-		    <<"OPTIONS">> ->
-			{erocci_store:collection(Mixin, Creds, Filter, 0, 0), Req};
-		    <<"HEAD">> ->
-			{erocci_store:collection(Mixin, Creds, Filter, 0, 0), Req};
-		    _ ->
-			{{error, method_not_allowed}, Req}
-		end,
+					<<"GET">> ->
+						case parse_range(Req) of
+							{ok, Start, Number} ->
+								{erocci_store:collection(Mixin, Creds, Filter, Start, Number), Req};
+							{error, _}=Err ->
+								{Err, Req}
+						end;
+					<<"DELETE">> ->
+						parse(Req, fun (Obj) -> erocci_store:remove_mixin(Mixin, Obj, Creds) end);
+					<<"POST">> ->
+						try cowboy_req:match_qs([action], Req) of
+							#{ action := Action } ->
+								parse(Req, fun (Obj) -> 
+												   erocci_store:action(Mixin, Action, Obj, Creds) 
+										   end)
+						catch error:{badmatch, false} ->
+								parse(Req, fun (Obj) -> 
+												   erocci_store:append_mixin(Mixin, Obj, Creds)
+										   end)
+						end;
+					<<"PUT">> ->
+						parse(Req, fun(Obj) -> erocci_store:set_mixin(Mixin, Obj, Creds) end);
+					<<"OPTIONS">> ->
+						{erocci_store:collection(Mixin, Creds, Filter, 0, 0), Req};
+					<<"HEAD">> ->
+						{erocci_store:collection(Mixin, Creds, Filter, 0, 0), Req};
+					_ ->
+						{{error, method_not_allowed}, Req}
+				end,
     Allows = <<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>,
     {cowboy_rest, cors(Allows, Req1), S}.
 
@@ -306,61 +306,61 @@ init_mixin_collection(Mixin, Creds, Filter, Req) ->
 init_node(Creds, Filter, Req) ->
     Path = occi_utils:normalize(cowboy_req:path(Req)),
     {S, Req1} = case cowboy_req:method(Req) of
-		    <<"GET">> ->
-			case parse_range(Req) of
-			    {ok, Start, Number} ->
-				{erocci_store:get(Path, Creds, Filter, Start, Number), Req};
-			    {error, _}=Err ->
-				Err
-			end;
-		    <<"DELETE">> ->
-			{erocci_store:delete(Path, Creds), Req};
-		    <<"POST">> ->
-			try cowboy_req:match_qs([action], Req) of
-			    #{ action := Action } ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:action(Path, Action, Obj, Creds) 
-					   end)
-			catch error:{badmatch, false} ->
-				parse(Req, fun (Obj) -> 
-						   erocci_store:update(Path, Obj, Creds) 
-					   end)
-			end;
-		    <<"PUT">> ->
-			parse(Req, fun (Obj) -> erocci_store:create(Path, Obj, cowboy_req:host_url(Req), Creds) end);
-		    <<"OPTIONS">> ->
-			{erocci_store:get(Path, Creds, Filter), Req};
-		    <<"HEAD">> ->
-			{erocci_store:get(Path, Creds, Filter), Req};
-		    _ ->
-			{{error, method_not_allowed}, Req}
-		end,
+					<<"GET">> ->
+						case parse_range(Req) of
+							{ok, Start, Number} ->
+								{erocci_store:get(Path, Creds, Filter, Start, Number), Req};
+							{error, _}=Err ->
+								Err
+						end;
+					<<"DELETE">> ->
+						{erocci_store:delete(Path, Creds), Req};
+					<<"POST">> ->
+						try cowboy_req:match_qs([action], Req) of
+							#{ action := Action } ->
+								parse(Req, fun (Obj) -> 
+												   erocci_store:action(Path, Action, Obj, Creds) 
+										   end)
+						catch error:{badmatch, false} ->
+								parse(Req, fun (Obj) -> 
+												   erocci_store:update(Path, Obj, Creds) 
+										   end)
+						end;
+					<<"PUT">> ->
+						parse(Req, fun (Obj) -> erocci_store:create(Path, Obj, cowboy_req:host_url(Req), Creds) end);
+					<<"OPTIONS">> ->
+						{erocci_store:get(Path, Creds, Filter), Req};
+					<<"HEAD">> ->
+						{erocci_store:get(Path, Creds, Filter), Req};
+					_ ->
+						{{error, method_not_allowed}, Req}
+				end,
     {cowboy_rest, cors(<<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>, Req1), S}.
 
 
 -define(body_opts, [
-		    {length, 64000},
-		    {read_length, 64000},
-		    {read_timeout, 5000}
-		   ]).
+					{length, 64000},
+					{read_length, 64000},
+					{read_timeout, 5000}
+				   ]).
 parse(Req, Next) ->
     case cowboy_req:body(Req, ?body_opts) of
-	{ok, Body, Req1} ->
-	    {Next({cowboy_req:header(<<"content-type">>, Req1), Body}), Req1};
-	{more, _, Req1} ->
-	    {{error, badlength}, Req1}
+		{ok, Body, Req1} ->
+			{Next({cowboy_req:header(<<"content-type">>, Req1), Body}), Req1};
+		{more, _, Req1} ->
+			{{error, badlength}, Req1}
     end.
 
 
 credentials(Req) ->
     Challenge = fun (_Creds) ->
-			application:get_env(erocci_listener_http, realm, <<"erocci">>)
-		end,
+						application:get_env(erocci_listener_http, realm, <<"erocci">>)
+				end,
     case cowboy_req:parse_header(<<"authorization">>, Req) of
-	{<<"basic">>, {User, Password}} ->
-	    erocci_creds:basic(User, Password, Challenge);
-	_ ->
-	    erocci_creds:basic(Challenge)
+		{<<"basic">>, {User, Password}} ->
+			erocci_creds:basic(User, Password, Challenge);
+		_ ->
+			erocci_creds:basic(Challenge)
     end.
 
 
@@ -371,14 +371,14 @@ errors(Err, Req) ->
 
 parse_filters(Qs) ->
     case parse_filters(Qs, []) of
-	[] ->
-	    [];
-	Filters ->
-	    lists:foldl(fun ({'=:=', Name, Val}, Acc) ->
-				erocci_filter:add_eq(Name, Val, Acc);
-			    ({like, '_', Val}, Acc) ->
-				erocci_filter:add_like('_', Val, Acc)
-			end, erocci_filter:new(), Filters)
+		[] ->
+			[];
+		Filters ->
+			lists:foldl(fun ({'=:=', Name, Val}, Acc) ->
+								erocci_filter:add_eq(Name, Val, Acc);
+							({like, '_', Val}, Acc) ->
+								erocci_filter:add_like('_', Val, Acc)
+						end, erocci_filter:new(), Filters)
     end.
 
 
@@ -387,10 +387,10 @@ parse_filters([], Acc) ->
 
 parse_filters([ {<<"category">>, Bin} | Tail ], Acc) ->
     case parse_category_filter(Bin) of
-	undefined ->
-	    parse_filters(Tail, Acc);
-	Category ->
-	    parse_filters(Tail, [Category | Acc])
+		undefined ->
+			parse_filters(Tail, Acc);
+		Category ->
+			parse_filters(Tail, [Category | Acc])
     end;
 
 parse_filters([ {<<"q">>, Bin} | Tail ], Acc) ->
@@ -404,7 +404,7 @@ parse_filters([ _ | Tail ], Acc) ->
 parse_category_filter(Bin) ->
     case binary:split(uri:unquote(Bin), [<<$#>>], [trim_all]) of
         [Scheme, Term] -> [{'=:=', scheme, Scheme}, {'=:=', term, Term}];
-	[Scheme] -> [{'=:=', scheme, Scheme}];
+		[Scheme] -> [{'=:=', scheme, Scheme}];
         _ -> []
     end.
 
@@ -415,34 +415,34 @@ parse_attr_filters([], Acc) ->
 parse_attr_filters([ Attr | Tail ], Acc) ->
     case binary:split(uri:unquote(Attr), <<"=">>) of
         [] -> 
-	    parse_attr_filters(Tail, Acc);
+			parse_attr_filters(Tail, Acc);
         [Val] -> 
-	    parse_attr_filters(Tail, [{like, '_', Val} | Acc]);
+			parse_attr_filters(Tail, [{like, '_', Val} | Acc]);
         [Name, Val] -> 
-	    parse_attr_filters(Tail, [ {'=:=', Name, Val} | Acc ])
+			parse_attr_filters(Tail, [ {'=:=', Name, Val} | Acc ])
     end.
 
 
 parse_range(Req) ->
     try cowboy_req:match_qs([{page, int, 0}, {number, int, 0}], Req) of
-	#{ page := Page, number := Number } ->
-	    {ok, (Page-1) * Number, Number}
+		#{ page := Page, number := Number } ->
+			{ok, (Page-1) * Number, Number}
     catch error:{case_clause, _} ->
-	    {error, {parse_error, range}};
-	  error:{badmatch, false} ->
-	    {ok, 0, 0}
+			{error, {parse_error, range}};
+		  error:{badmatch, false} ->
+			{ok, 0, 0}
     end.
 
 
 -define(EXPOSE_HEADERS, <<"server,category,link,x-occi-attribute,x-occi-location,location">>).
 cors(Methods, Req) ->
     case cowboy_req:header(<<"origin">>, Req) of
-	undefined -> 
-	    Req;
-	Origin ->
-	    Req1 = cowboy_req:set_resp_header(<<"access-control-allow-methods">>, Methods, Req),
-	    Req2 = cowboy_req:set_resp_header(<<"access-control-allow-origin">>, Origin, Req1),
-	    cowboy_req:set_resp_header(<<"access-control-expose-headers">>, ?EXPOSE_HEADERS, Req2)
+		undefined -> 
+			Req;
+		Origin ->
+			Req1 = cowboy_req:set_resp_header(<<"access-control-allow-methods">>, Methods, Req),
+			Req2 = cowboy_req:set_resp_header(<<"access-control-allow-origin">>, Origin, Req1),
+			cowboy_req:set_resp_header(<<"access-control-expose-headers">>, ?EXPOSE_HEADERS, Req2)
     end.
 
 
@@ -451,28 +451,28 @@ category_metadata(kind, Location, C, Acc) ->
     Name = iolist_to_binary(io_lib:format("~s~s", [Scheme, Term])),
     Title = occi_category:title(C),
     Map = #{ get => 
-		 #{ tags => [Name],
-		    description => 
-			iolist_to_binary(
-			  io_lib:format("Retrieve the collection of entities of the kind ~s (~s)",
-					[Name, Title])),
-		    consumes => [],
-		    produces => [ <<"text/uri-list">> | ?trails_mimetypes ]},
-	     post => 
-		 #{ tags => [Name],
-		    description => 
-			iolist_to_binary(
-			  io_lib:format("Creates a new entity the kind ~s (~s)",
-					[Name, Title])),
-		    consumes => ?trails_mimetypes,
-		    produces => ?trails_mimetypes},
-	     delete => 
-		 #{ tags => [Name],
-		    description =>
-			iolist_to_binary(
-			  io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
-		    consumes => [],
-		    produces => []}},
+				 #{ tags => [Name],
+					description => 
+						iolist_to_binary(
+						  io_lib:format("Retrieve the collection of entities of the kind ~s (~s)",
+										[Name, Title])),
+					consumes => [],
+					produces => [ <<"text/uri-list">> | ?trails_mimetypes ]},
+			 post => 
+				 #{ tags => [Name],
+					description => 
+						iolist_to_binary(
+						  io_lib:format("Creates a new entity the kind ~s (~s)",
+										[Name, Title])),
+					consumes => ?trails_mimetypes,
+					produces => ?trails_mimetypes},
+			 delete => 
+				 #{ tags => [Name],
+					description =>
+						iolist_to_binary(
+						  io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
+					consumes => [],
+					produces => []}},
     [ trails:trail(Location, ?MODULE, {kind, C}, Map) | Acc ];
 
 category_metadata(mixin, Location, C, Acc) ->
@@ -480,37 +480,37 @@ category_metadata(mixin, Location, C, Acc) ->
     Name = iolist_to_binary(io_lib:format("~s~s", [Scheme, Term])),
     Title = occi_category:title(C),
     Map = #{ get => 
-		 #{ tags => [Name],
-		    description => 
-			iolist_to_binary(
-			  io_lib:format("Retrieve the collection of entities associated with mixin ~s (~s)",
-					[Name, Title])),
-		    consumes => [],
-		    produces => [ <<"text/uri-list">> | ?trails_mimetypes ]},
-	     put => 
-		 #{ tags => [Name],
-		    description => 
-			iolist_to_binary(
-			  io_lib:format("Set the full collection of entities associated with mixin ~s (~s)",
-					[Name, Title])),
-		    consumes => ?trails_mimetypes,
-		    produces => ?trails_mimetypes},
-	     post => 
-		 #{ tags => [Name],
-		    description => 
-			iolist_to_binary(
-			  io_lib:format("Add entities to the collection of entities associated with mixin ~s (~s)",
-					[Name, Title])),
-		    consumes => ?trails_mimetypes,
-		    produces => ?trails_mimetypes},
-	     delete => 
-		 #{ tags => [Name],
-		    description =>
-			iolist_to_binary(
-			  io_lib:format("Remove entities from the mixin collection ~s (~s)", 
-					[Name, Title])),
-		    consumes => [],
-		    produces => []}},
+				 #{ tags => [Name],
+					description => 
+						iolist_to_binary(
+						  io_lib:format("Retrieve the collection of entities associated with mixin ~s (~s)",
+										[Name, Title])),
+					consumes => [],
+					produces => [ <<"text/uri-list">> | ?trails_mimetypes ]},
+			 put => 
+				 #{ tags => [Name],
+					description => 
+						iolist_to_binary(
+						  io_lib:format("Set the full collection of entities associated with mixin ~s (~s)",
+										[Name, Title])),
+					consumes => ?trails_mimetypes,
+					produces => ?trails_mimetypes},
+			 post => 
+				 #{ tags => [Name],
+					description => 
+						iolist_to_binary(
+						  io_lib:format("Add entities to the collection of entities associated with mixin ~s (~s)",
+										[Name, Title])),
+					consumes => ?trails_mimetypes,
+					produces => ?trails_mimetypes},
+			 delete => 
+				 #{ tags => [Name],
+					description =>
+						iolist_to_binary(
+						  io_lib:format("Remove entities from the mixin collection ~s (~s)", 
+										[Name, Title])),
+					consumes => [],
+					produces => []}},
     [ trails:trail(Location, ?MODULE, {mixin, C}, Map) | Acc ].
 
 
