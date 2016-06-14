@@ -212,7 +212,6 @@ trails_query() ->
 
 trails_collections() ->
     maps:fold(fun (Location, Category, Acc) ->
-					  ?debug("add collection trail: ~p", [Location]),
 					  category_metadata(occi_category:class(Category), Location, Category, Acc)
 			  end, [], erocci_store:collections()).
 
@@ -238,13 +237,10 @@ init2(Req, undefined, Creds, Filter) ->
     Path = occi_utils:normalize(cowboy_req:path(Req)),
 	case maps:get(Path, Collections, undefined) of
 		undefined ->
-			?debug("<undefined>init2: ~p", [Path]),
 			init_node(Path, Creds, Filter, Req);
 		Cat when ?is_mixin(Cat) ->
-			?debug("<mixin>init2: ~p", [Cat]),
 			init_mixin_collection(Cat, Creds, Filter, Req);
 		Cat when ?is_kind(Cat) ->
-			?debug("<kind>init2: ~p", [Cat]),
 			%% Should never be reached, intercepted by trails
 			init_kind_collection(Cat, Creds, Filter, Req)
 	end.
