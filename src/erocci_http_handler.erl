@@ -159,6 +159,9 @@ from(Req, {ok, Obj}=S) ->
 			   ?is_entity(Obj) ->
 				   Location = to_url(occi_entity:location(Obj), Req),
 				   cowboy_req:set_resp_header(<<"location">>, Location, Req);
+			   ?is_mixin(Obj) ->
+				   Location = to_url(occi_mixin:location(Obj), Req),
+				   cowboy_req:set_resp_header(<<"location">>, Location, Req);
 			   true ->
 				   Req
 		   end,
