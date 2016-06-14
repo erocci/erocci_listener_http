@@ -139,10 +139,19 @@ to(Req, {error, Err}=S) ->
     {halt, errors(Err, Req), S};
 
 to(Req, {ok, Obj, _Serial}) ->
-    Mimetype = cowboy_req:header(<<"accept">>, Req),
     Ctx = occi_uri:from_string(cowboy_req:url(Req)),
-    Body = occi_rendering:render(Mimetype, Obj, Ctx),
-    {[Body, "\n"], Req, {ok, Obj}}.
+    Mimetype = occi_utils:normalize_mimetype(cowboy_req:header(<<"accept">>, Req)),
+	case Mimetype of
+		{<<"text">>, <<"occi">>, _} ->
+			Headers = occi_renderer_occi:render(Obj, Ctx),
+			Req1 = lists:foldl(fun ({Name, Value}, Acc) ->
+									   cowboy_req:set_resp_header(Name, Value, Acc)
+							   end, Req, Headers),
+			{<<"OK", $\n>>, Req1, {ok, Obj}};
+		_ ->
+			Body = occi_rendering:render(Mimetype, Obj, Ctx),
+			{[Body, "\n"], Req, {ok, Obj}}
+	end.
 
 
 from(Req, {ok, Obj}=S) ->
@@ -153,10 +162,19 @@ from(Req, {ok, Obj}=S) ->
 			   true ->
 				   Req
 		   end,
-    Mimetype = cowboy_req:header(<<"accept">>, Req),
     Ctx = occi_uri:from_string(cowboy_req:url(Req)),
-    Body = occi_rendering:render(Mimetype, Obj, Ctx),
-    {true, cowboy_req:set_resp_body([Body, "\n"], Req1), S};
+    Mimetype = occi_utils:normalize_mimetype(cowboy_req:header(<<"accept">>, Req)),
+	case Mimetype of
+		{<<"text">>, <<"occi">>, _} ->
+			Headers = occi_renderer_occi:render(Obj, Ctx),
+			Req2 = lists:foldl(fun ({Name, Value}, Acc) ->
+									   cowboy_req:set_resp_header(Name, Value, Acc)
+							   end, Req1, Headers),
+			{true, cowboy_req:set_resp_body(<<"OK", $\n>>, Req2), S};
+		_ ->
+			Body = occi_rendering:render(Mimetype, Obj, Ctx),
+			{true, cowboy_req:set_resp_body([Body, "\n"], Req1), S}
+	end;
 
 from(Req, {error, Err}=S) ->
     {false, errors(Err, Req), S}.
@@ -344,11 +362,17 @@ init_node(Creds, Filter, Req) ->
 					{read_timeout, 5000}
 				   ]).
 parse(Req, Next) ->
-    case cowboy_req:body(Req, ?body_opts) of
-		{ok, Body, Req1} ->
-			{Next({cowboy_req:header(<<"content-type">>, Req1), Body}), Req1};
-		{more, _, Req1} ->
-			{{error, badlength}, Req1}
+	Mimetype = occi_utils:normalize_mimetype(cowboy_req:header(<<"content-type">>, Req)),
+	case Mimetype of
+		{<<"text">>, <<"occi">>, _} ->
+			{Next({Mimetype, cowboy_req:headers(Req)}), Req};
+		_ ->
+			case cowboy_req:body(Req, ?body_opts) of
+				{ok, Body, Req1} ->
+					{Next({Mimetype, Body}), Req1};
+				{more, _, Req1} ->
+					{{error, badlength}, Req1}
+			end
     end.
 
 
