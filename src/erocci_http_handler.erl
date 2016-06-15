@@ -134,6 +134,9 @@ malformed_request(Req, S) ->
 delete_resource(Req, ok) ->
     {true, Req, ok};
 
+delete_resource(Req, {ok, _, _}) ->
+    {true, Req, ok};
+
 delete_resource(Req, {error, Err}=S) ->
     {false, errors(Err, Req), S}.
 
