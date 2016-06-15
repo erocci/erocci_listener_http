@@ -142,7 +142,7 @@ to(Req, {error, Err}=S) ->
     ?error("HTTP listener error: ~p~n", [Err]),
     {halt, errors(Err, Req), S};
 
-to(Req, {ok, Obj, _Serial}) ->
+to(Req, {ok, Obj, _}=S) ->
     Ctx = occi_uri:from_string(cowboy_req:url(Req)),
     Mimetype = occi_utils:normalize_mimetype(cowboy_req:header(<<"accept">>, Req)),
 	case Mimetype of
@@ -151,14 +151,14 @@ to(Req, {ok, Obj, _Serial}) ->
 			Req1 = lists:foldl(fun ({Name, Value}, Acc) ->
 									   cowboy_req:set_resp_header(Name, Value, Acc)
 							   end, Req, Headers),
-			{<<"OK", $\n>>, Req1, {ok, Obj}};
+			{<<"OK", $\n>>, Req1, S};
 		_ ->
 			Body = occi_rendering:render(Mimetype, Obj, Ctx),
-			{[Body, "\n"], Req, {ok, Obj}}
+			{[Body, "\n"], Req, S}
 	end.
 
 
-from(Req, {ok, Obj}=S) ->
+from(Req, {ok, Obj, _}=S) ->
     Req1 = if 
 			   ?is_entity(Obj) ->
 				   Location = to_url(occi_entity:location(Obj), Req),
@@ -313,7 +313,7 @@ init_mixin_collection(Mixin, Creds, Filter, Req) ->
 								{Err, Req}
 						end;
 					<<"DELETE">> ->
-						parse(Req, fun (Obj) -> erocci_store:remove_mixin(Mixin, Obj, Creds) end);
+						parse(Req, fun (Obj) -> erocci_store:remove_mixin(Mixin, Obj, cowboy_req:host_url(Req), Creds) end);
 					<<"POST">> ->
 						try cowboy_req:match_qs([action], Req) of
 							#{ action := Action } ->
@@ -322,11 +322,11 @@ init_mixin_collection(Mixin, Creds, Filter, Req) ->
 										   end)
 						catch error:{badmatch, false} ->
 								parse(Req, fun (Obj) -> 
-												   erocci_store:append_mixin(Mixin, Obj, Creds)
+												   erocci_store:append_mixin(Mixin, Obj, cowboy_req:host_url(Req), Creds)
 										   end)
 						end;
 					<<"PUT">> ->
-						parse(Req, fun(Obj) -> erocci_store:set_mixin(Mixin, Obj, Creds) end);
+						parse(Req, fun(Obj) -> erocci_store:set_mixin(Mixin, Obj, cowboy_req:host_url(Req), Creds) end);
 					<<"OPTIONS">> ->
 						{erocci_store:collection(Mixin, Creds, Filter, 0, 0), Req};
 					<<"HEAD">> ->
