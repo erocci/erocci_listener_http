@@ -96,6 +96,10 @@ content_types_accepted(Req, S) ->
 resource_exists(Req, {error, not_found}=S) ->
     {false, Req, S};
 
+resource_exists(Req, {error, {not_found, Location}}=S) ->
+	?error("Not found: ~s", [Location]),
+    {false, Req, S};
+
 resource_exists(Req, S) ->
     {true, Req, S}.
 
