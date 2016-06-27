@@ -34,8 +34,12 @@ start(StartFun) ->
     trails:store(Trails),
     Dispatch = trails:single_host_compile(Trails),
     CowboyOpts = [
-		  {env, [{dispatch, Dispatch}]},
-		  {compress, true}
+				  {env, [
+						 {dispatch, Dispatch},
+						 {allowed_origin, application:get_env(erocci_listener_http, allowed_origin, undefined)}
+						]},
+				  {compress, true},
+				  {middlewares, [cowboy_router, erocci_http_cors, cowboy_handler]}
 		 ],
     Pool = application:get_env(erocci_listener_http, pool, 10),
     StartFun(Pool, CowboyOpts).

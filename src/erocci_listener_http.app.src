@@ -17,7 +17,8 @@
   },
   {registered, []},
   {env, [
-	 {pool, 10}
-	,{realm, <<"erocci">>}
+		 {pool, 10}
+		,{realm, <<"erocci">>}
+		,{allowed_origin, '*'}
 	]}
  ]}.

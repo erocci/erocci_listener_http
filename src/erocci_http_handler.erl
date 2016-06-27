@@ -270,7 +270,7 @@ init_capabilities(Creds, Filter, Req) ->
 					_ ->
 						{{error, method_not_allowed}, Req}
 				end,
-    {cowboy_rest, cors(<<"GET, DELETE, POST, OPTIONS, HEAD">>, Req1), S}.
+    {cowboy_rest, Req1, S}.
 
 
 init_kind_collection(Kind, Creds, Filter, Req) ->
@@ -302,8 +302,7 @@ init_kind_collection(Kind, Creds, Filter, Req) ->
 					_ ->
 						{{error, method_not_allowed}, Req}
 				end,
-    Allows = <<"GET, DELETE, POST, OPTIONS, HEAD">>,
-    {cowboy_rest, cors(Allows, Req1), S}.
+    {cowboy_rest, Req1, S}.
 
 
 init_mixin_collection(Mixin, Creds, Filter, Req) ->
@@ -337,8 +336,7 @@ init_mixin_collection(Mixin, Creds, Filter, Req) ->
 					_ ->
 						{{error, method_not_allowed}, Req}
 				end,
-    Allows = <<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>,
-    {cowboy_rest, cors(Allows, Req1), S}.
+    {cowboy_rest, Req1, S}.
 
 
 init_node(Path, Creds, Filter, Req) ->
@@ -372,7 +370,7 @@ init_node(Path, Creds, Filter, Req) ->
 					_ ->
 						{{error, method_not_allowed}, Req}
 				end,
-    {cowboy_rest, cors(<<"GET, DELETE, POST, PUT, OPTIONS, HEAD">>, Req1), S}.
+    {cowboy_rest, Req1, S}.
 
 
 -define(body_opts, [
@@ -474,18 +472,6 @@ parse_range(Req) ->
 			{error, {parse_error, range}};
 		  error:{badmatch, false} ->
 			{ok, 0, 0}
-    end.
-
-
--define(EXPOSE_HEADERS, <<"server,category,link,x-occi-attribute,x-occi-location,location">>).
-cors(Methods, Req) ->
-    case cowboy_req:header(<<"origin">>, Req) of
-		undefined -> 
-			Req;
-		Origin ->
-			Req1 = cowboy_req:set_resp_header(<<"access-control-allow-methods">>, Methods, Req),
-			Req2 = cowboy_req:set_resp_header(<<"access-control-allow-origin">>, Origin, Req1),
-			cowboy_req:set_resp_header(<<"access-control-expose-headers">>, ?EXPOSE_HEADERS, Req2)
     end.
 
 
