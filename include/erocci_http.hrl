@@ -7,6 +7,6 @@
 -ifndef(erocci_http_hrl).
 -define(erocci_http_hrl, true).
 
--define(SERVER_ID, "erocci OCCI/1.1").
+-define(SERVER_ID, "erocci OCCI/1.2").
 
 -endif.
