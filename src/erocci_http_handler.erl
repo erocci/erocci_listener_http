@@ -193,7 +193,7 @@ from(Req, {error, Err}=S) ->
 %% @doc Return trail definitions
 %% @end
 -define(trails_mimetypes, [<<"text/plain">>, <<"text/occi">>, <<"application/occi+json">>, 
-						   <<"application/json">>, <<"applicaton/occi+xml">>, <<"applicaton/xml">>]).
+						   <<"application/json">>, <<"application/occi+xml">>, <<"application/xml">>]).
 trails_query() ->
     QueryShort = trails:trail(<<"/-/">>, ?MODULE, query,
 							  #{get =>
