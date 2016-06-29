@@ -29,14 +29,18 @@ start(StartFun) ->
     {ok, _} = application:ensure_all_started(erocci_listener_http),
 	Trails0 = case application:get_env(erocci_listener_http, frontend, false) of
 				  true ->
-					  Dir = erocci_http_frontend:dir(),
-					  [
-					   {<<"/">>, erocci_http_frontend, []},
-					   {<<"/_frontend/">>, cowboy_static, {file, filename:join([Dir, "index.html"])}},
-					   {<<"/_frontend/[...]">>, cowboy_static, 
-						{dir, Dir, [{mimetypes, cow_mimetypes, all}]}
-					   }
-					  ];
+					  try erocci_http_frontend:dir() of
+						  Dir ->
+							  [
+							   {<<"/">>, erocci_http_frontend, []},
+							   {<<"/_frontend/">>, cowboy_static, {file, filename:join([Dir, "index.html"])}},
+							   {<<"/_frontend/[...]">>, cowboy_static, 
+								{dir, Dir, [{mimetypes, cow_mimetypes, all}]}
+							   }
+							  ]
+					  catch throw:_ ->
+							  []
+					  end;
 				  false ->
 					  []
 			  end,
