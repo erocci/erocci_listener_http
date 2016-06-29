@@ -42,10 +42,16 @@
 
 
 init(Req, Type) -> 
-    Creds = credentials(Req),
-    Filter = parse_filters(cowboy_req:parse_qs(Req)),
-    Req2 = cowboy_req:set_resp_header(<<"server">>, ?SERVER_ID, Req),
-    init2(Req2, Type, Creds, Filter).
+	case application:get_env(erocci_listener_http, frontend, false) of
+		true ->
+			Accepts = cowboy_req:parse_header(<<"accept">>, Req, undefined),
+			case is_html(Accepts) of
+				true -> to_frontend(Req, no_state);
+				false -> init_occi(Req, Type)
+			end;
+		false ->
+			init_occi(Req, Type)
+	end.
 
 
 -define(ALL_METHODS, [<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>]).
@@ -70,6 +76,7 @@ valid_entity_length(Req, S) ->
     {true, Req, S}.
 
 
+-define(frontend_content_type, {{<<"text">>,              <<"html">>,      []}, to}).
 -define(entity_content_type(M), [{{<<"text">>,            <<"plain">>,     []}, M},
 								 {{<<"text">>,            <<"occi">>,      []}, M},
 								 {{<<"application">>,     <<"json">>,      []}, M},
@@ -79,14 +86,15 @@ valid_entity_length(Req, S) ->
 -define(content_type(M), ?entity_content_type(M) ++ [ {{<<"text">>,    <<"uri-list">>,  []}, M} ]).
 
 content_types_provided(Req, {ok, Obj, _Serial}=S) ->
-    case occi_type:type(Obj) of
-		categories -> {?content_type(to), Req, S};
-		collection -> {?content_type(to), Req, S};
-		_ ->          {?entity_content_type(to), Req, S}
-    end;
+    CT = case occi_type:type(Obj) of
+			 categories -> ?content_type(to);
+			 collection -> ?content_type(to);
+			 _ ->          ?entity_content_type(to)
+		 end,
+	{[?frontend_content_type | CT], Req, S};
 
 content_types_provided(Req, S) ->
-    {?content_type(to), Req, S}.
+	{[?frontend_content_type | ?content_type(to)], Req, S}.
 
 
 content_types_accepted(Req, S) ->
@@ -230,6 +238,13 @@ trails_all() ->
 %%%
 %%% Private
 %%%
+init_occi(Req, Type) ->
+    Creds = credentials(Req),
+    Filter = parse_filters(cowboy_req:parse_qs(Req)),
+    Req2 = cowboy_req:set_resp_header(<<"server">>, ?SERVER_ID, Req),
+    init2(Req2, Type, Creds, Filter).
+
+
 init2(Req, query, Creds, Filter) ->
     init_capabilities(Creds, Filter , Req);
 
@@ -264,9 +279,9 @@ init_capabilities(Creds, Filter, Req) ->
 										   erocci_store:new_mixin(Obj, Creds)
 								   end);
 					<<"OPTIONS">> ->
-						{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
+						{erocci_store:capabilities(Creds, Filter), Req};
 					<<"HEAD">> ->
-						{erocci_store:capabilities(Creds, Filter, cowboy_req:url(Req)), Req};
+						{erocci_store:capabilities(Creds, Filter), Req};
 					_ ->
 						{{error, method_not_allowed}, Req}
 				end,
@@ -371,6 +386,22 @@ init_node(Path, Creds, Filter, Req) ->
 						{{error, method_not_allowed}, Req}
 				end,
     {cowboy_rest, Req1, S}.
+
+
+to_frontend(Req, S) ->
+	Orig = uri:from_string(cowboy_req:url(Req)),
+	Redirect0 = uri:path(Orig, <<"/_frontend/">>),
+	Redirect = uri:frag(Redirect0, uri:path(Orig)),
+	?debug("Redirect to ~s", [uri:to_string(Redirect)]),
+	Req2 = cowboy_req:reply(302, 							
+							[{<<"location">>, uri:to_string(Redirect)}], 
+							Req),
+	{ok, Req2, S}.
+
+			
+is_html([]) -> false;
+is_html([ {{<<"text">>, <<"html">>, _}, _, _} | _ ]) -> true;
+is_html([ _ | Tail ]) -> is_html(Tail).
 
 
 -define(body_opts, [
