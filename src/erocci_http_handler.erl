@@ -126,6 +126,9 @@ is_conflict(Req, S) ->
     {false, Req, S}.
 
 
+malformed_request(Req, {error, {internal, _}=Err}=S) ->
+    {stop, errors(Err, Req), S};
+
 malformed_request(Req, {error, {invalid_link, _}=Err}=S) ->
     {true, errors(Err, Req), S};
 

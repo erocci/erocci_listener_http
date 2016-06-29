@@ -16,6 +16,7 @@
 -module(erocci_http_common).
 
 -include("erocci_http.hrl").
+-include_lib("erocci_core/include/erocci_log.hrl").
 -include_lib("kernel/include/inet.hrl").
 
 % API
