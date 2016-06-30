@@ -306,6 +306,7 @@ init_kind_collection(Kind, Creds, Filter, Req) ->
 					<<"GET">> ->
 						case parse_range(Req) of
 							{ok, Start, Number} ->
+								?debug("start=~p, number=~p", [Start, Number]),
 								{erocci_store:collection(Kind, Creds, Filter, Start, Number), Req};
 							{error, _}=Err ->
 								{Err, Req}
@@ -509,13 +510,17 @@ parse_attr_filters([ Attr | Tail ], Acc) ->
 
 
 parse_range(Req) ->
-    try cowboy_req:match_qs([{page, int, 0}, {number, int, 0}], Req) of
-		#{ page := Page, number := Number } ->
-			{ok, (Page-1) * Number, Number}
+    try cowboy_req:match_qs([{page, int, 1}, {number, int, 0}], Req) of
+		#{ page := Page, number := Number } when Page > 0 andalso Number >= 0 ->
+			{ok, ((Page-1) * Number) + 1, Number};
+		#{ number := Number } when Number >= 0 ->
+			{ok, 1, Number};
+		_ ->
+			{ok, 1, 0}
     catch error:{case_clause, _} ->
 			{error, {parse_error, range}};
 		  error:{badmatch, false} ->
-			{ok, 0, 0}
+			{ok, 1, 0}
     end.
 
 
