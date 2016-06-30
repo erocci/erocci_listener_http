@@ -19,6 +19,7 @@
 
 %% REST Callbacks
 -export([init/2, 
+		 service_available/2,
          allowed_methods/2,
 		 generate_etag/2,
          is_authorized/2,
@@ -52,6 +53,14 @@ init(Req, Type) ->
 		false ->
 			init_occi(Req, Type)
 	end.
+
+
+%% Use service_available for returning earlier as possible internal errors
+service_available(Req, {error, {internal, _}}=S) ->
+	{stop, cowboy_req:reply(500, Req), S};
+
+service_available(Req, S) ->
+	{true, Req, S}.
 
 
 -define(ALL_METHODS, [<<"GET">>, <<"DELETE">>, <<"OPTIONS">>, <<"POST">>, <<"PUT">>, <<"HEAD">>]).
