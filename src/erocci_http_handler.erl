@@ -56,7 +56,8 @@ init(Req, Type) ->
 
 
 %% Use service_available for returning earlier as possible internal errors
-service_available(Req, {error, {internal, _}}=S) ->
+service_available(Req, {error, {internal, Err}}=S) ->
+	?error("Internal error: ~p", [Err]),
 	{stop, cowboy_req:reply(500, Req), S};
 
 service_available(Req, S) ->
