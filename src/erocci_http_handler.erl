@@ -306,7 +306,6 @@ init_kind_collection(Kind, Creds, Filter, Req) ->
 					<<"GET">> ->
 						case parse_range(Req) of
 							{ok, Start, Number} ->
-								?debug("start=~p, number=~p", [Start, Number]),
 								{erocci_store:collection(Kind, Creds, Filter, Start, Number), Req};
 							{error, _}=Err ->
 								{Err, Req}
