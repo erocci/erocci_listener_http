@@ -167,7 +167,7 @@ to(Req, {error, Err}=S) ->
     {halt, errors(Err, Req), S};
 
 to(Req, {ok, Obj, _}=S) ->
-    Ctx = occi_uri:from_string(cowboy_req:url(Req)),
+	Ctx = ctx(Req),
     Mimetype = occi_utils:normalize_mimetype(cowboy_req:header(<<"accept">>, Req)),
 	case Mimetype of
 		{<<"text">>, <<"occi">>, _} ->
@@ -193,7 +193,7 @@ from(Req, {ok, Obj, _}=S) ->
 			   true ->
 				   Req
 		   end,
-    Ctx = occi_uri:from_string(cowboy_req:url(Req)),
+	Ctx = ctx(Req),
     Mimetype = occi_utils:normalize_mimetype(cowboy_req:header(<<"accept">>, Req)),
 	case Mimetype of
 		{<<"text">>, <<"occi">>, _} ->
@@ -604,3 +604,8 @@ serial_to_etag(<< $", _/binary >> =Serial) ->
 
 serial_to_etag(Serial) when is_binary(Serial) ->
     << $", Serial/binary, $" >>.
+
+
+ctx(Req) ->
+	Ctx0 = occi_uri:from_string(cowboy_req:url(Req)),
+	occi_uri:q(occi_uri:frag(Ctx0, <<>>), []).
