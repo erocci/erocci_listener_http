@@ -43,15 +43,15 @@
 
 
 init(Req, Type) -> 
-	case application:get_env(erocci_listener_http, frontend, false) of
-		true ->
+	case application:get_env(erocci_listener_http, frontend, undefined) of
+		undefined ->
+			init_occi(Req, Type);
+		_ ->
 			Accepts = cowboy_req:parse_header(<<"accept">>, Req, undefined),
 			case is_html(Accepts) of
 				true -> to_frontend(Req, no_state);
 				false -> init_occi(Req, Type)
-			end;
-		false ->
-			init_occi(Req, Type)
+			end
 	end.
 
 

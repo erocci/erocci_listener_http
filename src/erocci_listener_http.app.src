@@ -20,6 +20,6 @@
 		 {pool, 10}
 		,{realm, <<"erocci">>}
 		,{allowed_origin, '*'}
-		,{frontend, true}
+		,{frontend, "erocci_frontend/app"}
 	]}
  ]}.

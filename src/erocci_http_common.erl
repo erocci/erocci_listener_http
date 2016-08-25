@@ -28,22 +28,15 @@
 %% @end
 start(StartFun) ->
     {ok, _} = application:ensure_all_started(erocci_listener_http),
-	Trails0 = case application:get_env(erocci_listener_http, frontend, false) of
-				  true ->
-					  try erocci_http_frontend:dir() of
-						  Dir ->
-							  [
-							   {<<"/">>, erocci_http_frontend, []},
-							   {<<"/_frontend/">>, cowboy_static, {file, filename:join([Dir, "index.html"])}},
-							   {<<"/_frontend/[...]">>, cowboy_static, 
-								{dir, Dir, [{mimetypes, cow_mimetypes, all}]}
-							   }
-							  ]
-					  catch throw:_ ->
-							  []
-					  end;
-				  false ->
-					  []
+	Trails0 = case application:get_env(erocci_listener_http, frontend, undefined) of
+				  undefined ->
+					  [];
+				  FrontendPath when is_list(FrontendPath) ->
+					  frontend_routes(FrontendPath);
+				  FrontendPath when is_binary(FrontendPath)-> 
+					  frontend_routes(binary_to_list(FrontendPath));
+				  Else ->
+					  throw({invalid_config, {frontend, Else}})
 			  end,
     Trails = Trails0
 		++ cowboy_swagger_handler:trails()
@@ -77,3 +70,32 @@ stop(Ref) ->
 %%%
 %%% Priv
 %%%
+frontend_routes(FrontendPath) ->
+	case where_is(FrontendPath) of
+		non_existing -> 
+			[];
+		Dir ->
+			[
+			 {<<"/">>, erocci_http_frontend, []},
+			 {<<"/_frontend/">>, cowboy_static, {file, filename:join([Dir, "index.html"])}},
+			 {<<"/_frontend/[...]">>, cowboy_static, 
+			  {dir, Dir, [{mimetypes, cow_mimetypes, all}]}
+			 }
+			]
+	end.
+
+
+where_is(<< $/, _ >> = AbsPath) ->
+	AbsPath;
+
+where_is(Path) ->
+	where_is(Path, code:get_path()).
+
+where_is(_, []) ->
+	non_existing;
+
+where_is(Path, [ CodePath | Tail ]) ->
+	case filelib:wildcard(Path, CodePath) of
+		[Path] -> filename:join(CodePath, Path);
+		_ -> where_is(Path, Tail)
+	end.
