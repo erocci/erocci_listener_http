@@ -33,26 +33,27 @@
 
 
 %% trails
--export([trails_query/0,
-		 trails_collections/0,
-		 trails_all/0]).
+-export([trails_query/1,
+		 trails_collections/1,
+		 trails_all/1]).
 
 
 %% Callback callbacks
 -export([to/2, from/2]).
 
 
-init(Req, Type) -> 
-	case application:get_env(erocci_listener_http, frontend, undefined) of
-		undefined ->
-			init_occi(Req, Type);
-		_ ->
-			Accepts = cowboy_req:parse_header(<<"accept">>, Req, undefined),
-			case is_html(Accepts) of
-				true -> to_frontend(Req, no_state);
-				false -> init_occi(Req, Type)
-			end
-	end.
+init(Req, #{ type := Type, frontend := false }) ->
+	init_occi(Req, Type);
+
+init(Req, #{ type := Type, frontend := true }) ->
+	Accepts = cowboy_req:parse_header(<<"accept">>, Req, undefined),
+	case is_html(Accepts) of
+		true -> to_frontend(Req, no_state);
+		false -> init_occi(Req, Type)
+	end;
+
+init(Req, _) ->
+	{cowboy_rest, Req, {error, not_found}}.
 
 
 %% Use service_available for returning earlier as possible internal errors
@@ -215,7 +216,7 @@ from(Req, {error, Err}=S) ->
 %% @end
 -define(trails_mimetypes, [<<"text/plain">>, <<"text/occi">>, <<"application/occi+json">>, 
 						   <<"application/json">>, <<"application/occi+xml">>, <<"application/xml">>]).
-trails_query() ->
+trails_query(Opts) ->
     QueryShort = trails:trail(<<"/-/">>, ?MODULE, query,
 							  #{get =>
 									#{ tags => [<<"Query Interface">>],
@@ -234,18 +235,18 @@ trails_query() ->
 									   consumes => ?trails_mimetypes,
 									   produces => []}
 							   }),
-    QueryNorm = trails:trail(<<"/.well-known/org/ogf/occi/-">>, ?MODULE, query, #{}),
+    QueryNorm = trails:trail(<<"/.well-known/org/ogf/occi/-">>, ?MODULE, Opts#{ type => query }),
     [ QueryShort, QueryNorm ].
 
 
-trails_collections() ->
+trails_collections(Opts) ->
     maps:fold(fun (Location, Category, Acc) ->
-					  category_metadata(occi_category:class(Category), Location, Category, Acc)
+					  category_metadata(occi_category:class(Category), Location, Category, Opts, Acc)
 			  end, [], erocci_store:collections()).
 
 
-trails_all() ->
-    [ trails:trail('_', ?MODULE, undefined, #{}) ].
+trails_all(Opts) ->
+    [ trails:trail('_', ?MODULE, Opts) ].
 
 
 %%%
@@ -523,7 +524,7 @@ parse_range(Req) ->
     end.
 
 
-category_metadata(kind, Location, C, Acc) ->
+category_metadata(kind, Location, C, Opts, Acc) ->
     {Scheme, Term} = occi_category:id(C),
     Name = iolist_to_binary(io_lib:format("~s~s", [Scheme, Term])),
     Title = occi_category:title(C),
@@ -550,9 +551,9 @@ category_metadata(kind, Location, C, Acc) ->
 						  io_lib:format("Remove entities of the kind ~s (~s)", [Name, Title])),
 					consumes => [],
 					produces => []}},
-    [ trails:trail(Location, ?MODULE, {kind, C}, Map) | Acc ];
+    [ trails:trail(Location, ?MODULE, Opts#{ type => {kind, C} }, Map) | Acc ];
 
-category_metadata(mixin, Location, C, Acc) ->
+category_metadata(mixin, Location, C, Opts, Acc) ->
     {Scheme, Term} = occi_category:id(C),
     Name = iolist_to_binary(io_lib:format("~s~s", [Scheme, Term])),
     Title = occi_category:title(C),
@@ -588,7 +589,7 @@ category_metadata(mixin, Location, C, Acc) ->
 										[Name, Title])),
 					consumes => [],
 					produces => []}},
-    [ trails:trail(Location, ?MODULE, {mixin, C}, Map) | Acc ].
+    [ trails:trail(Location, ?MODULE, Opts#{ type => {mixin, C} }, Map) | Acc ].
 
 
 to_url(Path, Req) ->

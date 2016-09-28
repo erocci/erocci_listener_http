@@ -28,36 +28,31 @@
 %% @end
 start(StartFun) ->
     {ok, _} = application:ensure_all_started(erocci_listener_http),
-	Trails0 = case application:get_env(erocci_listener_http, frontend, undefined) of
-				  undefined ->
-					  [];
-				  FrontendPath when is_list(FrontendPath) ->
-					  frontend_routes(FrontendPath);
-				  FrontendPath when is_binary(FrontendPath)-> 
-					  frontend_routes(binary_to_list(FrontendPath));
-				  Else ->
-					  throw({invalid_config, {frontend, Else}})
-			  end,
+	{Frontend, Trails0} = case application:get_env(erocci_listener_http, frontend, undefined) of
+							  undefined ->
+								  {false, []};
+							  FrontendPath when is_list(FrontendPath) ->
+								  {true, frontend_routes(FrontendPath)};
+							  FrontendPath when is_binary(FrontendPath)-> 
+								  {true, frontend_routes(binary_to_list(FrontendPath))};
+							  Else ->
+								  throw({invalid_config, {frontend, Else}})
+						  end,
+	HandlerOpts = #{ frontend => Frontend },
     Trails = Trails0
 		++ cowboy_swagger_handler:trails()
-		++ erocci_http_handler:trails_query()
-		++ erocci_http_handler:trails_collections()
-		++ erocci_http_handler:trails_all(),
+		++ erocci_http_handler:trails_query(HandlerOpts)
+		++ erocci_http_handler:trails_collections(HandlerOpts)
+		++ erocci_http_handler:trails_all(HandlerOpts),
     trails:store(Trails),
     Dispatch = trails:single_host_compile(Trails),
-	%% Middlewares = case application:get_env(erocci_listener_http, frontend, false) of
-	%% 				  true ->
-	%% 					  [ erocci_http_frontend, cowboy_router, erocci_http_cors, cowboy_handler ];
-	%% 				  false ->
-	%% 					  [ cowboy_router, erocci_http_cors, cowboy_handler ]
-	%% 			  end,
     CowboyOpts = [
 				  {env, [
 						 {dispatch, Dispatch},
 						 {allowed_origin, application:get_env(erocci_listener_http, allowed_origin, undefined)}
 						]},
 				  {compress, true},
-				  {middlewares, [ cowboy_router, erocci_http_cors, cowboy_handler ]}
+				  {middlewares, [cowboy_router, erocci_http_cors, cowboy_handler]}
 		 ],
     Pool = application:get_env(erocci_listener_http, pool, 10),
     StartFun(Pool, CowboyOpts).
